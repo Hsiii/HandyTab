@@ -27,7 +27,7 @@ def _setup_logging():
 
     # File handler — detailed
     fh = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(logging.INFO)
     fh.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     )
@@ -244,7 +244,8 @@ def main():
     logger.info("HandyTab v1.0.0 starting")
     logger.info("Python %s", sys.version)
     logger.info("Model: %s", config.MODEL_PATH)
-    logger.info("Target: %s → %s", config.load_target().gesture, config.load_target().url)
+    _t = config.load_target()
+    logger.info("Target: %s → %s", _t.gesture, _t.url)
     logger.info("=" * 50)
 
     app = HandyTabApp()

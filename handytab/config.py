@@ -95,10 +95,10 @@ def save_target(target: Target):
 # --- Detection Tuning ---
 CONFIDENCE_THRESHOLD = 0.40   # Minimum confidence score for a gesture match
 COOLDOWN_SECONDS = 0          # Latch logic prevents held-palm repeats; allow open-close-open retriggers
-CONSECUTIVE_FRAMES = 2        # Trigger as soon as Open Palm is seen in 2 consecutive frames
-FRAME_SKIP = 1                # Process every frame so the trigger feels immediate
-CAMERA_WIDTH = 640            # Camera capture resolution
-CAMERA_HEIGHT = 480
+CONSECUTIVE_FRAMES = 3        # Require 3 consecutive frames — more robust, still fast
+FRAME_SKIP = 3                # Process 1-in-3 frames → ~10 fps effective recognition (3× cheaper)
+CAMERA_WIDTH = 320            # Half-res is sufficient for gesture recognition
+CAMERA_HEIGHT = 240
 CAMERA_INDEX = 0              # Default camera device index
 
 # --- Gesture ---

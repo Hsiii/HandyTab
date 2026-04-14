@@ -131,10 +131,8 @@ class GestureDetector:
 
                 frame_count += 1
 
-                # Skip frames to reduce CPU usage; yield the thread so we
-                # don't busy-spin at 100% CPU between processed frames.
+                # Skip frames to reduce CPU usage.
                 if frame_count % config.FRAME_SKIP != 0:
-                    time.sleep(0.005)  # ~5 ms yield — prevents tight busy loop
                     continue
 
                 # Use real wall-clock timestamp — MediaPipe VIDEO mode requires
@@ -163,7 +161,6 @@ class GestureDetector:
     def _create_recognizer(self) -> GestureRecognizer:
         """Create and return a MediaPipe GestureRecognizer."""
         logger.info("Loading model from: %s", config.MODEL_PATH)
-
         base_options = BaseOptions(model_asset_path=config.MODEL_PATH)
         options = GestureRecognizerOptions(
             base_options=base_options,
@@ -200,7 +197,11 @@ class GestureDetector:
                 and confidence >= config.CONFIDENCE_THRESHOLD
             ):
                 if self._target_gesture_latched:
-                    self.on_frame_result(gesture_name, confidence, config.CONSECUTIVE_FRAMES)
+                    self.on_frame_result(
+                        gesture_name,
+                        confidence,
+                        config.CONSECUTIVE_FRAMES,
+                    )
                     return
 
                 self._consecutive_count += 1
@@ -210,8 +211,11 @@ class GestureDetector:
                     self._consecutive_count,
                     config.CONSECUTIVE_FRAMES,
                 )
-                # Notify UI of live state
-                self.on_frame_result(gesture_name, confidence, self._consecutive_count)
+                self.on_frame_result(
+                    gesture_name,
+                    confidence,
+                    self._consecutive_count,
+                )
 
                 if self._consecutive_count >= config.CONSECUTIVE_FRAMES:
                     logger.info(
