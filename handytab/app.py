@@ -6,6 +6,7 @@ configured target URL in the configured browser.
 
 import atexit
 import logging
+import os
 import subprocess
 import sys
 import time
