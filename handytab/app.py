@@ -1,7 +1,7 @@
 """HandyTab — macOS menu bar app for gesture-driven browser launching.
 
-Sits in the menu bar, detects the "Hi" (Open Palm) gesture via the webcam,
-and opens https://hsichen.dev in Chrome.
+Sits in the menu bar, detects gestures via the webcam, and opens the
+configured target URL in the configured browser.
 """
 
 import atexit
@@ -15,6 +15,7 @@ from PyObjCTools import AppHelper
 from . import config
 from .actions import ActionDispatcher
 from .gesture_detector import GestureDetector
+from .target import Target
 
 
 def _setup_logging():
@@ -62,7 +63,9 @@ class HandyTabApp(rumps.App):
         # --- State ---
         self.detecting = False
         self.dispatcher = ActionDispatcher(cooldown_seconds=config.COOLDOWN_SECONDS)
+        self._target: Target = config.load_target()
         self.detector = GestureDetector(
+            target_gesture=self._target.gesture,
             on_gesture=self._on_gesture_detected,
             on_status_change=self._on_status_change,
             on_error=self._on_error,
@@ -71,11 +74,12 @@ class HandyTabApp(rumps.App):
 
         # --- Menu ---
         self.toggle_button = rumps.MenuItem("Start Detection", callback=self._toggle_detection)
-        self.edit_url_item = rumps.MenuItem("Edit Target URL...", callback=self._edit_target_url)
-        
-        current_browser = config.get_browser()
-        browser_label = f"Browser: {current_browser}" if current_browser else "Browser: System Default"
-        self.edit_browser_item = rumps.MenuItem(browser_label, callback=self._edit_browser)
+        self.edit_url_item = rumps.MenuItem(
+            f"Target: {self._target.url}", callback=self._edit_target_url
+        )
+        self.edit_browser_item = rumps.MenuItem(
+            f"Browser: {self._target.browser_label}", callback=self._edit_browser
+        )
 
         self.menu = [
             self.toggle_button,
@@ -90,9 +94,10 @@ class HandyTabApp(rumps.App):
         atexit.register(self._cleanup)
 
         logger.info(
-            "HandyTab app initialized (target: %s, browser: %s)",
-            config.get_target_url(),
-            current_browser or "System Default",
+            "HandyTab app initialized (gesture: %s → %s, browser: %s)",
+            self._target.gesture,
+            self._target.url,
+            self._target.browser_label,
         )
 
     def _toggle_detection(self, sender):
@@ -110,11 +115,10 @@ class HandyTabApp(rumps.App):
     def _do_edit_target_url(self):
         try:
             logger.info("Opening Edit Target URL window")
-            current_url = config.get_target_url()
             window = rumps.Window(
                 message="Enter the target URL to open when the gesture is detected:",
                 title="Edit Target URL",
-                default_text=current_url,
+                default_text=self._target.url,
                 cancel=True,
                 dimensions=(320, 24)
             )
@@ -122,7 +126,9 @@ class HandyTabApp(rumps.App):
             if response.clicked:
                 new_url = response.text.strip()
                 if new_url:
-                    config.set_target_url(new_url)
+                    self._target.url = new_url
+                    config.save_target(self._target)
+                    self.edit_url_item.title = f"Target: {new_url}"
                     logger.info("Target URL updated to: %s", new_url)
         except Exception as e:
             logger.error("Failed to show Target URL window: %s", e)
@@ -134,14 +140,13 @@ class HandyTabApp(rumps.App):
     def _do_edit_browser(self):
         try:
             logger.info("Opening Set Browser window")
-            current_browser = config.get_browser() or "Default"
             window = rumps.Window(
                 message=(
                     "Enter the macOS application name of your preferred browser (e.g., 'Safari', 'Arc', 'Firefox').\n\n"
                     "Leave empty or type 'Default' to use your system's default browser."
                 ),
                 title="Set Browser",
-                default_text=current_browser,
+                default_text=self._target.browser or "Default",
                 cancel=True,
                 dimensions=(320, 24)
             )
@@ -149,12 +154,14 @@ class HandyTabApp(rumps.App):
             if response.clicked:
                 val = response.text.strip()
                 if not val or val.lower() == "default":
-                    config.set_browser(None)
-                    self.edit_browser_item.title = "Browser: System Default"
+                    self._target.browser = None
+                    config.save_target(self._target)
+                    self.edit_browser_item.title = f"Browser: {self._target.browser_label}"
                     logger.info("Browser preference reset to system default")
                 else:
-                    config.set_browser(val)
-                    self.edit_browser_item.title = f"Browser: {val}"
+                    self._target.browser = val
+                    config.save_target(self._target)
+                    self.edit_browser_item.title = f"Browser: {self._target.browser_label}"
                     logger.info("Browser updated to: %s", val)
         except Exception as e:
             logger.error("Failed to show Set Browser window: %s", e)
@@ -188,8 +195,7 @@ class HandyTabApp(rumps.App):
     def _on_gesture_detected(self, gesture_name: str, confidence: float):
         """Callback when the target gesture is confirmed."""
         logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
-
-        self.dispatcher.open_url(config.get_target_url(), config.get_browser())
+        self.dispatcher.open_url(self._target.url, self._target.browser)
 
     def _on_frame_result(self, gesture_name, confidence: float, streak: int):
         """Called every processed frame."""
@@ -238,7 +244,7 @@ def main():
     logger.info("HandyTab v1.0.0 starting")
     logger.info("Python %s", sys.version)
     logger.info("Model: %s", config.MODEL_PATH)
-    logger.info("Target: %s → %s", config.TARGET_GESTURE, config.get_target_url())
+    logger.info("Target: %s → %s", config.load_target().gesture, config.load_target().url)
     logger.info("=" * 50)
 
     app = HandyTabApp()

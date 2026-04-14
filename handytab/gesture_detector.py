@@ -28,12 +28,14 @@ class GestureDetector:
 
     def __init__(
         self,
+        target_gesture: str,
         on_gesture: Callable[[str, float], None],
         on_status_change: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
         on_frame_result: Optional[Callable[[Optional[str], float, int], None]] = None,
     ):
         """Args:
+            target_gesture:  MediaPipe category name to watch for, e.g. "Open_Palm".
             on_gesture:      Called when target gesture is confirmed (name, confidence).
             on_status_change: Called when detector lifecycle status changes.
             on_error:        Called on fatal errors.
@@ -41,6 +43,7 @@ class GestureDetector:
                              (gesture_name_or_None, confidence, consecutive_count).
                              Use this for live UI feedback.
         """
+        self.target_gesture = target_gesture
         self.on_gesture = on_gesture
         self.on_status_change = on_status_change or (lambda s: None)
         self.on_error = on_error or (lambda e: None)
@@ -193,7 +196,7 @@ class GestureDetector:
                          frame_count, timestamp_ms, gesture_name, confidence)
 
             if (
-                gesture_name == config.TARGET_GESTURE
+                gesture_name == self.target_gesture
                 and confidence >= config.CONFIDENCE_THRESHOLD
             ):
                 if self._target_gesture_latched:
