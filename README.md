@@ -1,6 +1,6 @@
-# HandyTab ✋
+# HandyTab
 
-A macOS menu bar app that detects hand gestures via webcam to open a target URL in Chrome when you wave **Hi** 👋.
+A macOS menu bar app that detects hand gestures via webcam to open a target URL in Chrome when you wave.
 
 ## Quickstart
 
@@ -19,8 +19,8 @@ python run_handytab.py
 ```
 
 ## Usage
-1. Click the ✋ icon in the menu bar and select **Start Detection**.
-2. Wave your hand (**Open Palm**) at the camera to trigger the browser action.
+1. Click the app icon in the menu bar and select **Start Detection**.
+2. Wave your hand at the camera to trigger the browser action.
 3. Use **Edit Target...** to change the destination URL (persisted to `~/.handytab_config.json`).
 
 ## Build
