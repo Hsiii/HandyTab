@@ -69,6 +69,7 @@ class HandyTabApp(rumps.App):
             on_frame_result=self._on_frame_result,
         )
 
+        # --- Menu ---
         self.toggle_button = rumps.MenuItem("Start Detection", callback=self._toggle_detection)
         self.edit_url_item = rumps.MenuItem("Edit Target URL...", callback=self._edit_target_url)
         
@@ -78,21 +79,20 @@ class HandyTabApp(rumps.App):
 
         self.menu = [
             self.toggle_button,
-            None,  # Separator
+            None,
             self.edit_url_item,
             self.edit_browser_item,
-            None,  # Separator
+            None,
             rumps.MenuItem("Quit HandyTab", callback=self._quit),
         ]
 
         # Register cleanup on exit
         atexit.register(self._cleanup)
 
-        current_browser = config.get_browser() or "System Default"
         logger.info(
             "HandyTab app initialized (target: %s, browser: %s)",
             config.get_target_url(),
-            current_browser,
+            current_browser or "System Default",
         )
 
     def _toggle_detection(self, sender):
@@ -104,47 +104,60 @@ class HandyTabApp(rumps.App):
 
     def _edit_target_url(self, sender):
         """Prompt the user to change the target URL."""
-        current_url = config.get_target_url()
-        window = rumps.Window(
-            message="Enter the target URL to open when the gesture is detected:",
-            title="Edit Target URL",
-            default_text=current_url,
-            cancel=True,
-            icon=config.ICON_PATH,
-            dimensions=(320, 24)
-        )
-        response = window.run()
-        if response.clicked:
-            new_url = response.text.strip()
-            if new_url:
-                config.set_target_url(new_url)
-                logger.info("Target URL updated to: %s", new_url)
+        # Use callAfter to ensure we're on the main thread and the menu has closed
+        AppHelper.callAfter(self._do_edit_target_url)
+
+    def _do_edit_target_url(self):
+        try:
+            logger.info("Opening Edit Target URL window")
+            current_url = config.get_target_url()
+            window = rumps.Window(
+                message="Enter the target URL to open when the gesture is detected:",
+                title="Edit Target URL",
+                default_text=current_url,
+                cancel=True,
+                dimensions=(320, 24)
+            )
+            response = window.run()
+            if response.clicked:
+                new_url = response.text.strip()
+                if new_url:
+                    config.set_target_url(new_url)
+                    logger.info("Target URL updated to: %s", new_url)
+        except Exception as e:
+            logger.error("Failed to show Target URL window: %s", e)
 
     def _edit_browser(self, sender):
         """Prompt the user to change the target browser."""
-        current_browser = config.get_browser() or "Default"
-        window = rumps.Window(
-            message=(
-                "Enter the macOS application name of your preferred browser (e.g., 'Safari', 'Arc', 'Firefox').\n\n"
-                "Leave empty or type 'Default' to use your system's default browser."
-            ),
-            title="Set Browser",
-            default_text=current_browser,
-            cancel=True,
-            icon=config.ICON_PATH,
-            dimensions=(320, 24)
-        )
-        response = window.run()
-        if response.clicked:
-            val = response.text.strip()
-            if not val or val.lower() == "default":
-                config.set_browser(None)
-                self.edit_browser_item.title = "Browser: System Default"
-                logger.info("Browser preference reset to system default")
-            else:
-                config.set_browser(val)
-                self.edit_browser_item.title = f"Browser: {val}"
-                logger.info("Browser updated to: %s", val)
+        AppHelper.callAfter(self._do_edit_browser)
+
+    def _do_edit_browser(self):
+        try:
+            logger.info("Opening Set Browser window")
+            current_browser = config.get_browser() or "Default"
+            window = rumps.Window(
+                message=(
+                    "Enter the macOS application name of your preferred browser (e.g., 'Safari', 'Arc', 'Firefox').\n\n"
+                    "Leave empty or type 'Default' to use your system's default browser."
+                ),
+                title="Set Browser",
+                default_text=current_browser,
+                cancel=True,
+                dimensions=(320, 24)
+            )
+            response = window.run()
+            if response.clicked:
+                val = response.text.strip()
+                if not val or val.lower() == "default":
+                    config.set_browser(None)
+                    self.edit_browser_item.title = "Browser: System Default"
+                    logger.info("Browser preference reset to system default")
+                else:
+                    config.set_browser(val)
+                    self.edit_browser_item.title = f"Browser: {val}"
+                    logger.info("Browser updated to: %s", val)
+        except Exception as e:
+            logger.error("Failed to show Set Browser window: %s", e)
 
     def _start_detection(self):
         """Start the gesture detector."""
