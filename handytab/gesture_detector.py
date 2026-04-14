@@ -1,6 +1,7 @@
 """Gesture detection engine — camera capture + MediaPipe recognition in a background thread."""
 
 import logging
+import os
 import threading
 import time
 from typing import Callable, Optional
@@ -21,24 +22,16 @@ class GestureDetector:
         self,
         target_gesture: str,
         on_gesture: Callable[[str, float], None],
-        on_status_change: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
-        on_frame_result: Optional[Callable[[Optional[str], float, int], None]] = None,
     ):
         """Args:
             target_gesture:  MediaPipe category name to watch for, e.g. "Open_Palm".
             on_gesture:      Called when target gesture is confirmed (name, confidence).
-            on_status_change: Called when detector lifecycle status changes.
             on_error:        Called on fatal errors.
-            on_frame_result: Called every processed frame with
-                             (gesture_name_or_None, confidence, consecutive_count).
-                             Use this for live UI feedback.
         """
         self.target_gesture = target_gesture
         self.on_gesture = on_gesture
-        self.on_status_change = on_status_change or (lambda s: None)
         self.on_error = on_error or (lambda e: None)
-        self.on_frame_result = on_frame_result or (lambda g, c, s: None)
 
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -85,13 +78,18 @@ class GestureDetector:
         recognizer = None
 
         try:
-            # Initialize the gesture recognizer
-            self.on_status_change("Initializing...")
+            if not os.path.exists(config.MODEL_PATH):
+                error_msg = (
+                    f"Cannot find the gesture model at:\n{config.MODEL_PATH}\n\n"
+                    "Please run the download script first."
+                )
+                logger.error(error_msg)
+                self.on_error(error_msg)
+                return
+
             recognizer = self._create_recognizer()
 
-            # Open camera
-            self.on_status_change("Opening camera...")
-            cap = cv2.VideoCapture(config.CAMERA_INDEX)
+            cap = self._cv2.VideoCapture(config.CAMERA_INDEX)
             if not cap.isOpened():
                 error_msg = (
                     f"Cannot open camera (index {config.CAMERA_INDEX}). "
@@ -99,13 +97,11 @@ class GestureDetector:
                 )
                 logger.error(error_msg)
                 self.on_error(error_msg)
-                self.on_status_change("Camera error")
                 return
 
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
+            cap.set(self._cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
+            cap.set(self._cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
 
-            self.on_status_change("Detecting...")
             logger.info(
                 "Camera opened (%.0fx%.0f). Detection loop starting.",
                 cap.get(self._cv2.CAP_PROP_FRAME_WIDTH),
@@ -142,7 +138,6 @@ class GestureDetector:
             error_msg = f"Detection error: {e}"
             logger.exception(error_msg)
             self.on_error(error_msg)
-            self.on_status_change("Error")
         finally:
             if cap is not None and cap.isOpened():
                 cap.release()
@@ -205,11 +200,6 @@ class GestureDetector:
                 and confidence >= config.CONFIDENCE_THRESHOLD
             ):
                 if self._target_gesture_latched:
-                    self.on_frame_result(
-                        gesture_name,
-                        confidence,
-                        config.CONSECUTIVE_FRAMES,
-                    )
                     return
 
                 self._consecutive_count += 1
@@ -218,11 +208,6 @@ class GestureDetector:
                     confidence,
                     self._consecutive_count,
                     config.CONSECUTIVE_FRAMES,
-                )
-                self.on_frame_result(
-                    gesture_name,
-                    confidence,
-                    self._consecutive_count,
                 )
 
                 if self._consecutive_count >= config.CONSECUTIVE_FRAMES:
@@ -235,12 +220,8 @@ class GestureDetector:
                     self.on_gesture(gesture_name, confidence)
                     self._consecutive_count = 0
                 return
-
-            # Hand detected but not the target gesture / below threshold
-            self.on_frame_result(gesture_name, confidence, 0)
         else:
             logger.debug("Frame %d (ts=%dms): no gesture", frame_count, timestamp_ms)
-            self.on_frame_result(None, 0.0, 0)
 
         # Reset streak and release the trigger latch once the palm is gone or changed.
         if self._consecutive_count > 0:

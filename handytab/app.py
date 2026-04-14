@@ -6,14 +6,14 @@ configured target URL in the configured browser.
 
 import atexit
 import logging
-import os
+import subprocess
 import sys
+import time
 
 import rumps
 from PyObjCTools import AppHelper
 
 from . import config
-from .actions import ActionDispatcher
 from .gesture_detector import GestureDetector
 from .target import Target
 
@@ -62,14 +62,12 @@ class HandyTabApp(rumps.App):
 
         # --- State ---
         self.detecting = False
-        self.dispatcher = ActionDispatcher(cooldown_seconds=config.COOLDOWN_SECONDS)
+        self._last_trigger_time = 0.0
         self._target: Target = config.load_target()
         self.detector = GestureDetector(
             target_gesture=self._target.gesture,
             on_gesture=self._on_gesture_detected,
-            on_status_change=self._on_status_change,
             on_error=self._on_error,
-            on_frame_result=self._on_frame_result,
         )
 
         # --- Menu ---
@@ -168,16 +166,6 @@ class HandyTabApp(rumps.App):
 
     def _start_detection(self):
         """Start the gesture detector."""
-        if not os.path.exists(config.MODEL_PATH):
-            rumps.alert(
-                title="Model Not Found",
-                message=(
-                    f"Cannot find the gesture model at:\n{config.MODEL_PATH}\n\n"
-                    "Please run the download script first."
-                ),
-            )
-            return
-
         self.detecting = True
         self.toggle_button.title = "Pause Detection"
         self.title = self.APP_TITLE
@@ -195,15 +183,7 @@ class HandyTabApp(rumps.App):
     def _on_gesture_detected(self, gesture_name: str, confidence: float):
         """Callback when the target gesture is confirmed."""
         logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
-        self.dispatcher.open_url(self._target.url, self._target.browser)
-
-    def _on_frame_result(self, gesture_name, confidence: float, streak: int):
-        """Called every processed frame."""
-        pass
-
-    def _on_status_change(self, status: str):
-        """Update the status display in the menu."""
-        pass
+        self._open_target_url()
 
     def _on_error(self, error_msg: str):
         """Handle errors from the detector."""
@@ -225,6 +205,45 @@ class HandyTabApp(rumps.App):
     def _dispatch_ui(self, callback):
         """Schedule AppKit work onto the main run loop."""
         AppHelper.callAfter(callback)
+
+    def _open_target_url(self) -> bool:
+        """Open the configured target URL, respecting the cooldown."""
+        if (time.time() - self._last_trigger_time) < config.COOLDOWN_SECONDS:
+            return False
+
+        url = self._target.url
+        browser = self._target.browser
+
+        try:
+            cmd = ["open", "-a", browser, url] if browser else ["open", url]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            _, stderr = proc.communicate(timeout=1.0)
+            if proc.returncode != 0:
+                logger.error(
+                    "macOS 'open' command failed with code %d: %s",
+                    proc.returncode,
+                    stderr.strip(),
+                )
+                return False
+
+            logger.info("Opened %s (Browser: %s)", url, browser or "System Default")
+            self._last_trigger_time = time.time()
+            return True
+        except subprocess.TimeoutExpired:
+            logger.info("Opened %s (Browser: %s) [Async]", url, browser or "System Default")
+            self._last_trigger_time = time.time()
+            return True
+        except FileNotFoundError:
+            logger.error("'open' command not found — are you on macOS?")
+            return False
+        except Exception as exc:
+            logger.error("Failed to open URL: %s", exc)
+            return False
 
     def _quit(self, sender):
         """Clean up and quit."""
