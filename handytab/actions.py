@@ -36,9 +36,28 @@ class ActionDispatcher:
             return False
 
         try:
-            subprocess.Popen(["open", "-a", browser, url])
+            cmd = ["open", "-a", browser, url] if browser else ["open", url]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Since open is generally fast but can error on invalid browser names,
+            # we do a quick non-blocking wait/poll check.
+            stdout, stderr = proc.communicate(timeout=1.0)
+            if proc.returncode != 0:
+                logger.error("macOS 'open' command failed with code %d: %s", proc.returncode, stderr.strip())
+                return False
+
+            logger.info("Opened %s (Browser: %s)", url, browser or "System Default")
             self._last_trigger_time = time.time()
-            logger.info("Opened %s in %s", url, browser)
+            return True
+        except subprocess.TimeoutExpired:
+            # Command is taking a while, likely launched okay but didn't exit yet
+            logger.info("Opened %s (Browser: %s) [Async]", url, browser or "System Default")
+            self._last_trigger_time = time.time()
             return True
         except FileNotFoundError:
             logger.error("'open' command not found — are you on macOS?")

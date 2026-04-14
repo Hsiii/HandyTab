@@ -70,12 +70,17 @@ class HandyTabApp(rumps.App):
         )
 
         self.toggle_button = rumps.MenuItem("Start Detection", callback=self._toggle_detection)
-        self.edit_url_item = rumps.MenuItem("Edit Target...", callback=self._edit_target_url)
+        self.edit_url_item = rumps.MenuItem("Edit Target URL...", callback=self._edit_target_url)
+        
+        current_browser = config.get_browser()
+        browser_label = f"Browser: {current_browser}" if current_browser else "Browser: System Default"
+        self.edit_browser_item = rumps.MenuItem(browser_label, callback=self._edit_browser)
 
         self.menu = [
             self.toggle_button,
             None,  # Separator
             self.edit_url_item,
+            self.edit_browser_item,
             None,  # Separator
             rumps.MenuItem("Quit HandyTab", callback=self._quit),
         ]
@@ -83,7 +88,12 @@ class HandyTabApp(rumps.App):
         # Register cleanup on exit
         atexit.register(self._cleanup)
 
-        logger.info("HandyTab app initialized (target: %s)", config.get_target_url())
+        current_browser = config.get_browser() or "System Default"
+        logger.info(
+            "HandyTab app initialized (target: %s, browser: %s)",
+            config.get_target_url(),
+            current_browser,
+        )
 
     def _toggle_detection(self, sender):
         """Start or stop gesture detection."""
@@ -109,6 +119,32 @@ class HandyTabApp(rumps.App):
             if new_url:
                 config.set_target_url(new_url)
                 logger.info("Target URL updated to: %s", new_url)
+
+    def _edit_browser(self, sender):
+        """Prompt the user to change the target browser."""
+        current_browser = config.get_browser() or "Default"
+        window = rumps.Window(
+            message=(
+                "Enter the macOS application name of your preferred browser (e.g., 'Safari', 'Arc', 'Firefox').\n\n"
+                "Leave empty or type 'Default' to use your system's default browser."
+            ),
+            title="Set Browser",
+            default_text=current_browser,
+            cancel=True,
+            icon=config.ICON_PATH,
+            dimensions=(320, 24)
+        )
+        response = window.run()
+        if response.clicked:
+            val = response.text.strip()
+            if not val or val.lower() == "default":
+                config.set_browser(None)
+                self.edit_browser_item.title = "Browser: System Default"
+                logger.info("Browser preference reset to system default")
+            else:
+                config.set_browser(val)
+                self.edit_browser_item.title = f"Browser: {val}"
+                logger.info("Browser updated to: %s", val)
 
     def _start_detection(self):
         """Start the gesture detector."""
@@ -140,7 +176,7 @@ class HandyTabApp(rumps.App):
         """Callback when the target gesture is confirmed."""
         logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
 
-        self.dispatcher.open_url(config.get_target_url(), config.BROWSER)
+        self.dispatcher.open_url(config.get_target_url(), config.get_browser())
 
     def _on_frame_result(self, gesture_name, confidence: float, streak: int):
         """Called every processed frame."""

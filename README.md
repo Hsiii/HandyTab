@@ -20,7 +20,7 @@ python run_handytab.py
 
 ## Usage
 1. Click the app icon in the menu bar and select **Start Detection**.
-2. Wave your hand at the camera to trigger the browser action.
+2. Wave your hand at the camera to open the target tab.
 3. Use **Edit Target...** to change the destination URL (persisted to `~/.handytab_config.json`).
 
 ## Build
@@ -34,4 +34,3 @@ make build
 The resulting assets will be located in the `dist/` directory:
 - `dist/HandyTab.app`: The macOS application bundle.
 - `dist/HandyTab.dmg`: The disk image installer.
-

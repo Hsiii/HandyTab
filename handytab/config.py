@@ -70,7 +70,32 @@ def set_target_url(url: str):
     except Exception:
         pass
 
-BROWSER = "Google Chrome"
+def get_browser() -> str:
+    """Return the configured browser name, or None for system default."""
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get('browser', None)
+        except Exception:
+            pass
+    return None
+
+def set_browser(browser: str):
+    data = {}
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except Exception:
+            pass
+    data['browser'] = browser
+    try:
+        with open(_CONFIG_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
 
 # --- Detection Tuning ---
 CONFIDENCE_THRESHOLD = 0.40   # Minimum confidence score for a gesture match
