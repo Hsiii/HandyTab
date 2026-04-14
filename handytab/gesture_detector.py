@@ -5,15 +5,6 @@ import threading
 import time
 from typing import Callable, Optional
 
-import cv2
-import mediapipe as mp
-from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import (
-    GestureRecognizer,
-    GestureRecognizerOptions,
-    RunningMode,
-)
-
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -53,6 +44,8 @@ class GestureDetector:
         self._thread: Optional[threading.Thread] = None
         self._consecutive_count = 0
         self._target_gesture_latched = False
+        self._cv2 = None
+        self._mp = None
 
     @property
     def is_running(self) -> bool:
@@ -115,8 +108,8 @@ class GestureDetector:
             self.on_status_change("Detecting...")
             logger.info(
                 "Camera opened (%.0fx%.0f). Detection loop starting.",
-                cap.get(cv2.CAP_PROP_FRAME_WIDTH),
-                cap.get(cv2.CAP_PROP_FRAME_HEIGHT),
+                cap.get(self._cv2.CAP_PROP_FRAME_WIDTH),
+                cap.get(self._cv2.CAP_PROP_FRAME_HEIGHT),
             )
 
             frame_count = 0
@@ -158,8 +151,20 @@ class GestureDetector:
                 recognizer.close()
                 logger.info("Recognizer closed")
 
-    def _create_recognizer(self) -> GestureRecognizer:
+    def _create_recognizer(self):
         """Create and return a MediaPipe GestureRecognizer."""
+        import cv2
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions
+        from mediapipe.tasks.python.vision import (
+            GestureRecognizer,
+            GestureRecognizerOptions,
+            RunningMode,
+        )
+
+        self._cv2 = cv2
+        self._mp = mp
+
         logger.info("Loading model from: %s", config.MODEL_PATH)
         base_options = BaseOptions(model_asset_path=config.MODEL_PATH)
         options = GestureRecognizerOptions(
@@ -172,11 +177,14 @@ class GestureDetector:
         )
         return GestureRecognizer.create_from_options(options)
 
-    def _process_frame(self, recognizer: GestureRecognizer, frame, frame_count: int, timestamp_ms: int):
+    def _process_frame(self, recognizer, frame, frame_count: int, timestamp_ms: int):
         """Process a single frame for gesture recognition."""
         # Convert BGR (OpenCV) to RGB (MediaPipe)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        rgb_frame = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2RGB)
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB,
+            data=rgb_frame,
+        )
 
         try:
             result = recognizer.recognize_for_video(mp_image, timestamp_ms)
