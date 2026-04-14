@@ -24,12 +24,14 @@ python run_handytab.py
 3. Use **Edit Target...** to change the destination URL (persisted to `~/.handytab_config.json`).
 
 ## Build
-```bash
-# Generate .app bundle
-python setup.py py2app
 
-# Generate .dmg (requires hdiutil)
-mkdir -p dist/dmg_content && cp -R dist/HandyTab.app dist/dmg_content/
-ln -s /Applications dist/dmg_content/Applications
-hdiutil create -volname "HandyTab" -srcfolder dist/dmg_content -ov -format UDZO dist/HandyTab.dmg
+To build the macOS application bundle and the DMG installer, simply run:
+
+```bash
+make build
 ```
+
+The resulting assets will be located in the `dist/` directory:
+- `dist/HandyTab.app`: The macOS application bundle.
+- `dist/HandyTab.dmg`: The disk image installer.
+
