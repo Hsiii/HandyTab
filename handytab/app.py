@@ -71,6 +71,15 @@ class HandyTabApp(rumps.App):
             on_error=self._on_error,
         )
 
+        # --- Three-finger tap alternative trigger ---
+        try:
+            from .macos_gesture_listener import ThreeFingerTapListener
+
+            self._three_finger_listener = ThreeFingerTapListener(self._on_three_finger_tap)
+            logger.info("Three-finger tap listener initialized.")
+        except Exception as e:
+            logger.warning(f"Three-finger tap listener could not be initialized: {e}")
+
         # --- Menu ---
         self.toggle_button = rumps.MenuItem("Start Detection", callback=self._toggle_detection)
         self.edit_url_item = rumps.MenuItem(
@@ -98,6 +107,10 @@ class HandyTabApp(rumps.App):
             self._target.url,
             self._target.browser_label,
         )
+
+    def _on_three_finger_tap(self):
+        logger.info("Three-finger tap detected (trackpad)")
+        self._dispatch_ui(self._open_target_url)
 
     def _toggle_detection(self, sender):
         """Start or stop gesture detection."""
