@@ -204,11 +204,6 @@ class GestureDetector:
         else:
             logger.debug("Frame %d (ts=%dms): no gesture", frame_count, timestamp_ms)
 
-        custom_gesture = self._custom_landmark_gesture(result)
-        if custom_gesture is not None:
-            gesture_name = custom_gesture
-            confidence = config.CUSTOM_THUMB_DOWN_CONFIDENCE
-
         self.on_observation(gesture_name, confidence)
 
         if gesture_name != "No_Hand":
@@ -233,36 +228,6 @@ class GestureDetector:
                 config.GESTURE_WINDOW_FRAMES,
             )
             self.on_gesture(gesture_name, confidence)
-
-    def _custom_landmark_gesture(self, result) -> str | None:
-        hand_landmarks = getattr(result, "hand_landmarks", None)
-        if not hand_landmarks:
-            return None
-
-        landmarks = hand_landmarks[0]
-        if self._thumb_points_down(landmarks) and self._non_thumb_fingers_curled(landmarks):
-            return "Thumb_Down"
-        return None
-
-    def _thumb_points_down(self, landmarks) -> bool:
-        thumb_tip = landmarks[4]
-        thumb_ip = landmarks[3]
-        thumb_mcp = landmarks[2]
-        wrist = landmarks[0]
-
-        thumb_drop = thumb_tip.y - thumb_mcp.y
-        wrist_to_mcp = abs(thumb_mcp.y - wrist.y) or 1.0
-        return (
-            thumb_tip.y > thumb_ip.y > thumb_mcp.y
-            and thumb_drop / wrist_to_mcp >= config.MIN_THUMB_DOWN_DROP_RATIO
-        )
-
-    def _non_thumb_fingers_curled(self, landmarks) -> bool:
-        finger_pairs = ((8, 6), (12, 10), (16, 14), (20, 18))
-        return all(
-            landmarks[tip].y - landmarks[pip].y >= config.MIN_THUMB_DOWN_FINGER_CURL_RATIO
-            for tip, pip in finger_pairs
-        )
 
     def _hand_quality_ok(self, result, gesture_name: str) -> bool:
         """Reject low-quality hand poses before they can trigger actions."""
