@@ -7,6 +7,7 @@ import time
 from typing import Callable, Optional
 
 from . import config
+from .triggers import GestureTriggerStateMachine, TriggerEvent, TriggerSource
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +15,18 @@ logger = logging.getLogger(__name__)
 class GestureDetector:
     """Runs gesture detection on a background thread.
 
-    Calls `on_gesture(gesture_name, confidence)` whenever the target gesture
-    is detected for `consecutive_frames` frames in a row.
+    Calls `on_gesture(event)` whenever the target gesture is confirmed.
     """
 
     def __init__(
         self,
         target_gesture: str,
-        on_gesture: Callable[[str, float], None],
+        on_gesture: Callable[[TriggerEvent], None],
         on_error: Optional[Callable[[str], None]] = None,
     ):
         """Args:
             target_gesture:  MediaPipe category name to watch for, e.g. "Open_Palm".
-            on_gesture:      Called when target gesture is confirmed (name, confidence).
+            on_gesture:      Called when target gesture is confirmed.
             on_error:        Called on fatal errors.
         """
         self.target_gesture = target_gesture
@@ -35,8 +35,12 @@ class GestureDetector:
 
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._consecutive_count = 0
-        self._target_gesture_latched = False
+        self._state = GestureTriggerStateMachine(
+            required_hits=config.GESTURE_REQUIRED_HITS,
+            window_size=config.GESTURE_WINDOW_FRAMES,
+            release_absent_seconds=config.RELEASE_ABSENT_SECONDS,
+            cooldown_seconds=config.COOLDOWN_SECONDS,
+        )
         self._cv2 = None
         self._mp = None
 
@@ -51,8 +55,7 @@ class GestureDetector:
             return
 
         self._stop_event.clear()
-        self._consecutive_count = 0
-        self._target_gesture_latched = False
+        self._state.reset()
         self._thread = threading.Thread(target=self._run, daemon=True, name="GestureDetector")
         self._thread.start()
         logger.info("Gesture detector started")
@@ -68,8 +71,7 @@ class GestureDetector:
         if self._thread.is_alive():
             logger.warning("Detector thread did not stop cleanly")
         self._thread = None
-        self._consecutive_count = 0
-        self._target_gesture_latched = False
+        self._state.reset()
         logger.info("Gesture detector stopped")
 
     def _run(self):
@@ -187,46 +189,81 @@ class GestureDetector:
             logger.debug("Recognition error on frame %d (ts=%dms): %s", frame_count, timestamp_ms, e)
             return
 
+        candidate = False
+        trigger_ready = False
+        gesture_name = "No_Hand"
+        confidence = 0.0
+
         if result.gestures and len(result.gestures) > 0:
             top_gesture = result.gestures[0][0]
             gesture_name = top_gesture.category_name
             confidence = top_gesture.score
+            quality_ok = self._hand_quality_ok(result)
 
             logger.debug("Frame %d (ts=%dms): %s (%.2f)",
                          frame_count, timestamp_ms, gesture_name, confidence)
 
-            if (
+            candidate = (
                 gesture_name == self.target_gesture
-                and confidence >= config.CONFIDENCE_THRESHOLD
-            ):
-                if self._target_gesture_latched:
-                    return
-
-                self._consecutive_count += 1
-                logger.debug(
-                    "Open_Palm detected (%.2f) — streak %d/%d",
-                    confidence,
-                    self._consecutive_count,
-                    config.CONSECUTIVE_FRAMES,
-                )
-
-                if self._consecutive_count >= config.CONSECUTIVE_FRAMES:
-                    logger.info(
-                        "🖐 Hi gesture confirmed! (confidence=%.2f, streak=%d)",
-                        confidence,
-                        self._consecutive_count,
-                    )
-                    self._target_gesture_latched = True
-                    self.on_gesture(gesture_name, confidence)
-                    self._consecutive_count = 0
-                return
+                and confidence >= config.RELEASE_CONFIDENCE_THRESHOLD
+                and quality_ok
+            )
+            trigger_ready = candidate and confidence >= config.TRIGGER_CONFIDENCE_THRESHOLD
         else:
             logger.debug("Frame %d (ts=%dms): no gesture", frame_count, timestamp_ms)
 
-        # Reset streak and release the trigger latch once the palm is gone or changed.
-        if self._consecutive_count > 0:
-            logger.debug("Streak broken — resetting")
-        self._consecutive_count = 0
-        if self._target_gesture_latched:
-            logger.debug("Target gesture released — ready for the next trigger")
-        self._target_gesture_latched = False
+        if self._state.observe(candidate=candidate, trigger_ready=trigger_ready):
+            logger.info(
+                "Gesture confirmed: %s (confidence=%.2f, window=%d/%d)",
+                gesture_name,
+                confidence,
+                config.GESTURE_REQUIRED_HITS,
+                config.GESTURE_WINDOW_FRAMES,
+            )
+            self.on_gesture(
+                TriggerEvent(
+                    source=TriggerSource.CAMERA,
+                    name=gesture_name,
+                    confidence=confidence,
+                )
+            )
+
+    def _hand_quality_ok(self, result) -> bool:
+        """Reject low-quality hand poses before they can trigger actions."""
+        hand_landmarks = getattr(result, "hand_landmarks", None)
+        if not hand_landmarks:
+            return False
+
+        landmarks = hand_landmarks[0]
+        xs = [landmark.x for landmark in landmarks]
+        ys = [landmark.y for landmark in landmarks]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        width = max_x - min_x
+        height = max_y - min_y
+        hand_size = max(width, height)
+
+        if hand_size < config.MIN_HAND_BOX_RATIO:
+            logger.debug("Rejecting gesture: hand too small (%.2f)", hand_size)
+            return False
+
+        margin = config.HAND_EDGE_MARGIN_RATIO
+        if min_x < margin or max_x > 1.0 - margin or min_y < margin or max_y > 1.0 - margin:
+            logger.debug("Rejecting gesture: hand too close to frame edge")
+            return False
+
+        if self.target_gesture != "Open_Palm":
+            return True
+
+        finger_pairs = ((8, 6), (12, 10), (16, 14), (20, 18))
+        extended_fingers = sum(1 for tip, pip in finger_pairs if landmarks[tip].y < landmarks[pip].y)
+        if extended_fingers < config.MIN_OPEN_PALM_EXTENDED_FINGERS:
+            logger.debug("Rejecting open palm: only %d extended fingers", extended_fingers)
+            return False
+
+        finger_spread = abs(landmarks[8].x - landmarks[20].x)
+        if width > 0 and finger_spread / width < config.MIN_OPEN_PALM_SPREAD_RATIO:
+            logger.debug("Rejecting open palm: insufficient finger spread")
+            return False
+
+        return True

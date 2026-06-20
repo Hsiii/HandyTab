@@ -17,6 +17,7 @@ from PyObjCTools import AppHelper
 from . import config
 from .gesture_detector import GestureDetector
 from .target import Target
+from .triggers import TriggerEvent, TriggerSource
 
 
 def _setup_logging():
@@ -110,7 +111,12 @@ class HandyTabApp(rumps.App):
 
     def _on_three_finger_tap(self):
         logger.info("Three-finger tap detected (trackpad)")
-        self._dispatch_ui(self._open_target_url)
+        self._handle_trigger(
+            TriggerEvent(
+                source=TriggerSource.TRACKPAD,
+                name="Three_Finger_Tap",
+            )
+        )
 
     def _toggle_detection(self, sender):
         """Start or stop gesture detection."""
@@ -194,10 +200,15 @@ class HandyTabApp(rumps.App):
         self.detector.stop()
         logger.info("Detection paused by user")
 
-    def _on_gesture_detected(self, gesture_name: str, confidence: float):
+    def _on_gesture_detected(self, event: TriggerEvent):
         """Callback when the target gesture is confirmed."""
-        logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
-        self._open_target_url()
+        logger.info("Gesture callback: %s (%.2f)", event.name, event.confidence)
+        self._handle_trigger(event)
+
+    def _handle_trigger(self, event: TriggerEvent):
+        """Route any enabled input trigger to the configured target action."""
+        logger.info("Trigger received from %s: %s", event.source.value, event.name)
+        self._dispatch_ui(self._open_target_url)
 
     def _on_error(self, error_msg: str):
         """Handle errors from the detector."""

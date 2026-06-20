@@ -93,13 +93,21 @@ def save_target(target: Target):
 
 
 # --- Detection Tuning ---
-CONFIDENCE_THRESHOLD = 0.40   # Minimum confidence score for a gesture match
-COOLDOWN_SECONDS = 0          # Latch logic prevents held-palm repeats; allow open-close-open retriggers
-CONSECUTIVE_FRAMES = 2        # Trigger as soon as Open Palm is seen in 2 consecutive frames
-FRAME_SKIP = 3                # Process 1-in-3 frames → ~10 fps effective recognition (3× cheaper)
+TRIGGER_CONFIDENCE_THRESHOLD = 0.45  # Confidence required for a positive window hit
+RELEASE_CONFIDENCE_THRESHOLD = 0.25  # Lower threshold keeps the latch stable near the edge
+CONFIDENCE_THRESHOLD = TRIGGER_CONFIDENCE_THRESHOLD  # Backward-compatible alias
+COOLDOWN_SECONDS = 0.7        # Prevent instant open-close-open retriggers
+GESTURE_WINDOW_FRAMES = 5     # Rolling frame window used for confirmation
+GESTURE_REQUIRED_HITS = 3     # Trigger when this many window samples are positive
+RELEASE_ABSENT_SECONDS = 0.35 # Gesture must be absent this long before rearming
+FRAME_SKIP = 3                # Process 1-in-3 frames -> ~10 fps effective recognition
 CAMERA_WIDTH = 320            # Half-res is sufficient for gesture recognition
 CAMERA_HEIGHT = 240
 CAMERA_INDEX = 0              # Default camera device index
+MIN_HAND_BOX_RATIO = 0.16     # Reject tiny far-away hands and classifier noise
+HAND_EDGE_MARGIN_RATIO = 0.03 # Reject hands clipped hard against the frame edge
+MIN_OPEN_PALM_EXTENDED_FINGERS = 3
+MIN_OPEN_PALM_SPREAD_RATIO = 0.45
 
 # --- Gesture ---
 # TARGET_GESTURE is now owned by Target (loaded via config.load_target()).
