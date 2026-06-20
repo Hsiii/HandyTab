@@ -52,6 +52,7 @@ class HandyTabApp(rumps.App):
     OPEN_PALM_LABEL = "Open Palm"
     CLOSED_FIST_LABEL = "Closed Fist"
     NO_HAND_LABEL = "No Hand"
+    LOGIN_ITEM_NAME = "HandyTab"
 
     def __init__(self):
         super().__init__(
@@ -92,6 +93,7 @@ class HandyTabApp(rumps.App):
         self.edit_browser_item = rumps.MenuItem(
             f"Browser: {self._target.browser_label}", callback=self._edit_browser
         )
+        self.start_at_login_item = rumps.MenuItem("", callback=self._toggle_start_at_login)
 
         self.menu = [
             self.camera_trigger_item,
@@ -99,6 +101,7 @@ class HandyTabApp(rumps.App):
             None,
             self.edit_url_item,
             self.edit_browser_item,
+            self.start_at_login_item,
             None,
             rumps.MenuItem("Quit HandyTab", callback=self._quit),
         ]
@@ -115,6 +118,7 @@ class HandyTabApp(rumps.App):
             self.trackpad_trigger_enabled,
         )
         self._refresh_trigger_menu_titles()
+        self._refresh_start_at_login_title()
         if self.camera_trigger_enabled:
             self._start_detection()
 
@@ -176,6 +180,15 @@ class HandyTabApp(rumps.App):
             if response.clicked:
                 new_url = response.text.strip()
                 if new_url:
+                    try:
+                        new_url = config.normalize_target_url(new_url)
+                    except ValueError as exc:
+                        rumps.notification(
+                            title="HandyTab",
+                            subtitle="Invalid target URL",
+                            message=str(exc),
+                        )
+                        return
                     self._target.url = new_url
                     config.save_target(self._target)
                     self.edit_url_item.title = f"Target: {new_url}"
@@ -215,6 +228,86 @@ class HandyTabApp(rumps.App):
                     logger.info("Browser updated to: %s", val)
         except Exception as e:
             logger.error("Failed to show Set Browser window: %s", e)
+
+    def _toggle_start_at_login(self, sender):
+        """Enable or disable launching the bundled app at login."""
+        app_path = self._app_bundle_path()
+        if app_path is None:
+            rumps.notification(
+                title="HandyTab",
+                subtitle="Start at Login unavailable",
+                message="Build and run HandyTab.app to manage this setting.",
+            )
+            return
+
+        try:
+            if self._login_item_enabled():
+                self._remove_login_item()
+            else:
+                self._add_login_item(app_path)
+        except Exception as exc:
+            logger.error("Failed to update login item: %s", exc)
+            rumps.notification(
+                title="HandyTab",
+                subtitle="Could not update Start at Login",
+                message=str(exc),
+            )
+        finally:
+            self._refresh_start_at_login_title()
+
+    def _refresh_start_at_login_title(self):
+        if self._app_bundle_path() is None:
+            self.start_at_login_item.title = "Start at Login: Unavailable"
+            return
+        self.start_at_login_item.title = (
+            "Start at Login: On" if self._login_item_enabled() else "Start at Login: Off"
+        )
+
+    def _app_bundle_path(self) -> str | None:
+        try:
+            from Foundation import NSBundle
+
+            bundle_path = NSBundle.mainBundle().bundlePath()
+            if bundle_path and bundle_path.endswith(".app"):
+                return bundle_path
+        except Exception:
+            pass
+
+        for path in (sys.argv[0], __file__):
+            current = os.path.abspath(path)
+            while current and current != os.path.dirname(current):
+                if current.endswith(".app"):
+                    return current
+                current = os.path.dirname(current)
+        return None
+
+    def _login_item_enabled(self) -> bool:
+        script = (
+            f'tell application "System Events" to exists login item "{self.LOGIN_ITEM_NAME}"'
+        )
+        result = self._run_osascript(script, check=False)
+        return result.stdout.strip().lower() == "true"
+
+    def _add_login_item(self, app_path: str):
+        escaped_path = app_path.replace("\\", "\\\\").replace('"', '\\"')
+        script = (
+            'tell application "System Events" to make login item at end with properties '
+            f'{{path:"{escaped_path}", hidden:false}}'
+        )
+        self._run_osascript(script)
+
+    def _remove_login_item(self):
+        script = f'tell application "System Events" to delete login item "{self.LOGIN_ITEM_NAME}"'
+        self._run_osascript(script)
+
+    def _run_osascript(self, script: str, check: bool = True) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["osascript", "-e", script],
+            check=check,
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+        )
 
     def _start_detection(self):
         """Start the gesture detector."""

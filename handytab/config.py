@@ -40,6 +40,7 @@ MODEL_PATH = _resource_path(os.path.join("models", "gesture_recognizer.task"))
 ICON_PATH = _resource_path(os.path.join("assets", "icon.png"))
 
 import json
+from urllib.parse import urlparse
 
 from .target import Target
 
@@ -55,6 +56,26 @@ _DEFAULT_CAMERA_TRIGGER_ENABLED = False
 _DEFAULT_TRACKPAD_TRIGGER_ENABLED = True
 
 
+def normalize_target_url(value: str) -> str:
+    """Normalize user URL input and reject malformed values."""
+    url = value.strip()
+    if not url:
+        raise ValueError("URL cannot be empty")
+
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        url = f"https://{url}"
+        parsed = urlparse(url)
+
+    hostname = parsed.hostname or ""
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("URL must start with http:// or https://")
+    if not parsed.netloc or ("." not in hostname and hostname != "localhost"):
+        raise ValueError("Enter a valid URL, such as https://example.com")
+
+    return url
+
+
 def load_target() -> Target:
     """Load the active target from disk, falling back to defaults."""
     if os.path.exists(_CONFIG_FILE):
@@ -63,7 +84,7 @@ def load_target() -> Target:
                 data = json.load(f)
             return Target(
                 gesture=data.get("gesture", _DEFAULT_TARGET.gesture),
-                url=data.get("target_url", _DEFAULT_TARGET.url),
+                url=normalize_target_url(data.get("target_url", _DEFAULT_TARGET.url)),
                 browser=data.get("browser") or None,
             )
         except Exception:
@@ -85,7 +106,7 @@ def save_target(target: Target):
         except Exception:
             pass
     data["gesture"] = target.gesture
-    data["target_url"] = target.url
+    data["target_url"] = normalize_target_url(target.url)
     data["browser"] = target.browser
     try:
         with open(_CONFIG_FILE, "w") as f:
