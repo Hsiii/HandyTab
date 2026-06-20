@@ -133,7 +133,6 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
 # --- Detection Tuning ---
 TRIGGER_CONFIDENCE_THRESHOLD = 0.45  # Confidence required for a positive window hit
 RELEASE_CONFIDENCE_THRESHOLD = 0.25  # Lower threshold keeps the latch stable near the edge
-CONFIDENCE_THRESHOLD = TRIGGER_CONFIDENCE_THRESHOLD  # Backward-compatible alias
 COOLDOWN_SECONDS = 0.7        # Prevent instant open-close-open retriggers
 GESTURE_WINDOW_FRAMES = 5     # Rolling frame window used for confirmation
 GESTURE_REQUIRED_HITS = 3     # Trigger when this many window samples are positive
