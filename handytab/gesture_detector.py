@@ -7,7 +7,7 @@ import time
 from typing import Callable, Optional
 
 from . import config
-from .triggers import GestureTriggerStateMachine, TriggerEvent, TriggerSource
+from .triggers import GestureTriggerStateMachine
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class GestureDetector:
     def __init__(
         self,
         target_gesture: str,
-        on_gesture: Callable[[TriggerEvent], None],
+        on_gesture: Callable[[str, float], None],
         on_error: Optional[Callable[[str], None]] = None,
     ):
         """Args:
@@ -220,13 +220,7 @@ class GestureDetector:
                 config.GESTURE_REQUIRED_HITS,
                 config.GESTURE_WINDOW_FRAMES,
             )
-            self.on_gesture(
-                TriggerEvent(
-                    source=TriggerSource.CAMERA,
-                    name=gesture_name,
-                    confidence=confidence,
-                )
-            )
+            self.on_gesture(gesture_name, confidence)
 
     def _hand_quality_ok(self, result) -> bool:
         """Reject low-quality hand poses before they can trigger actions."""

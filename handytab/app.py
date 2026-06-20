@@ -16,8 +16,6 @@ from PyObjCTools import AppHelper
 
 from . import config
 from .gesture_detector import GestureDetector
-from .target import Target
-from .triggers import TriggerEvent, TriggerSource
 
 
 def _setup_logging():
@@ -65,12 +63,12 @@ class HandyTabApp(rumps.App):
 
         # --- State ---
         self._last_trigger_time = 0.0
-        self._target: Target = config.load_target()
+        self._gesture, self._url, self._browser = config.load_target()
         self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
             config.load_trigger_settings()
         )
         self.detector = GestureDetector(
-            target_gesture=self._target.gesture,
+            target_gesture=self._gesture,
             on_gesture=self._on_gesture_detected,
             on_error=self._on_error,
         )
@@ -88,10 +86,10 @@ class HandyTabApp(rumps.App):
         self.camera_trigger_item = rumps.MenuItem("", callback=self._toggle_camera_trigger)
         self.trackpad_trigger_item = rumps.MenuItem("", callback=self._toggle_trackpad_trigger)
         self.edit_url_item = rumps.MenuItem(
-            f"Target: {self._target.url}", callback=self._edit_target_url
+            f"Target: {self._url}", callback=self._edit_target_url
         )
         self.edit_browser_item = rumps.MenuItem(
-            f"Browser: {self._target.browser_label}", callback=self._edit_browser
+            f"Browser: {self._browser_label}", callback=self._edit_browser
         )
         self.start_at_login_item = rumps.MenuItem("", callback=self._toggle_start_at_login)
 
@@ -111,9 +109,9 @@ class HandyTabApp(rumps.App):
 
         logger.info(
             "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s)",
-            self._target.gesture,
-            self._target.url,
-            self._target.browser_label,
+            self._gesture,
+            self._url,
+            self._browser_label,
             self.camera_trigger_enabled,
             self.trackpad_trigger_enabled,
         )
@@ -124,12 +122,11 @@ class HandyTabApp(rumps.App):
 
     def _on_three_finger_tap(self):
         logger.info("Three-finger tap detected (trackpad)")
-        self._handle_trigger(
-            TriggerEvent(
-                source=TriggerSource.TRACKPAD,
-                name="Three_Finger_Tap",
-            )
-        )
+        self._handle_trigger("trackpad", "Three_Finger_Tap")
+
+    @property
+    def _browser_label(self) -> str:
+        return self._browser or "System Default"
 
     def _toggle_camera_trigger(self, sender):
         """Enable or disable camera gesture detection."""
@@ -172,7 +169,7 @@ class HandyTabApp(rumps.App):
             window = rumps.Window(
                 message="Enter the target URL to open when the gesture is detected:",
                 title="Edit Target URL",
-                default_text=self._target.url,
+                default_text=self._url,
                 cancel=True,
                 dimensions=(320, 24)
             )
@@ -189,8 +186,8 @@ class HandyTabApp(rumps.App):
                             message=str(exc),
                         )
                         return
-                    self._target.url = new_url
-                    config.save_target(self._target)
+                    self._url = new_url
+                    config.save_target(self._gesture, self._url, self._browser)
                     self.edit_url_item.title = f"Target: {new_url}"
                     logger.info("Target URL updated to: %s", new_url)
         except Exception as e:
@@ -209,7 +206,7 @@ class HandyTabApp(rumps.App):
                     "Leave empty or type 'Default' to use your system's default browser."
                 ),
                 title="Set Browser",
-                default_text=self._target.browser or "Default",
+                default_text=self._browser or "Default",
                 cancel=True,
                 dimensions=(320, 24)
             )
@@ -217,14 +214,14 @@ class HandyTabApp(rumps.App):
             if response.clicked:
                 val = response.text.strip()
                 if not val or val.lower() == "default":
-                    self._target.browser = None
-                    config.save_target(self._target)
-                    self.edit_browser_item.title = f"Browser: {self._target.browser_label}"
+                    self._browser = None
+                    config.save_target(self._gesture, self._url, self._browser)
+                    self.edit_browser_item.title = f"Browser: {self._browser_label}"
                     logger.info("Browser preference reset to system default")
                 else:
-                    self._target.browser = val
-                    config.save_target(self._target)
-                    self.edit_browser_item.title = f"Browser: {self._target.browser_label}"
+                    self._browser = val
+                    config.save_target(self._gesture, self._url, self._browser)
+                    self.edit_browser_item.title = f"Browser: {self._browser_label}"
                     logger.info("Browser updated to: %s", val)
         except Exception as e:
             logger.error("Failed to show Set Browser window: %s", e)
@@ -321,18 +318,18 @@ class HandyTabApp(rumps.App):
         self.detector.stop()
         logger.info("Detection paused by user")
 
-    def _on_gesture_detected(self, event: TriggerEvent):
+    def _on_gesture_detected(self, gesture_name: str, confidence: float):
         """Callback when the target gesture is confirmed."""
-        logger.info("Gesture callback: %s (%.2f)", event.name, event.confidence)
-        self._handle_trigger(event)
+        logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
+        self._handle_trigger("camera", gesture_name)
 
-    def _handle_trigger(self, event: TriggerEvent):
+    def _handle_trigger(self, source: str, name: str):
         """Route any enabled input trigger to the configured target action."""
-        if event.source == TriggerSource.CAMERA and not self.camera_trigger_enabled:
+        if source == "camera" and not self.camera_trigger_enabled:
             return
-        if event.source == TriggerSource.TRACKPAD and not self.trackpad_trigger_enabled:
+        if source == "trackpad" and not self.trackpad_trigger_enabled:
             return
-        logger.info("Trigger received from %s: %s", event.source.value, event.name)
+        logger.info("Trigger received from %s: %s", source, name)
         self._dispatch_ui(self._open_target_url)
 
     def _on_error(self, error_msg: str):
@@ -362,8 +359,8 @@ class HandyTabApp(rumps.App):
         if (time.time() - self._last_trigger_time) < config.COOLDOWN_SECONDS:
             return False
 
-        url = self._target.url
-        browser = self._target.browser
+        url = self._url
+        browser = self._browser
 
         try:
             cmd = ["open", "-a", browser, url] if browser else ["open", url]
@@ -414,8 +411,8 @@ def main():
     logger.info("HandyTab v1.0.0 starting")
     logger.info("Python %s", sys.version)
     logger.info("Model: %s", config.MODEL_PATH)
-    _t = config.load_target()
-    logger.info("Target: %s → %s", _t.gesture, _t.url)
+    gesture, url, _browser = config.load_target()
+    logger.info("Target: %s → %s", gesture, url)
     logger.info("=" * 50)
 
     app = HandyTabApp()

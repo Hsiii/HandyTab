@@ -2,30 +2,7 @@
 
 import time
 from collections import deque
-from dataclasses import dataclass
-from enum import Enum
 from typing import Deque
-
-
-class TriggerSource(str, Enum):
-    CAMERA = "camera"
-    TRACKPAD = "trackpad"
-
-
-@dataclass(frozen=True)
-class TriggerEvent:
-    """A normalized input event that can open the configured target."""
-
-    source: TriggerSource
-    name: str
-    confidence: float = 1.0
-
-
-class GesturePhase(str, Enum):
-    IDLE = "idle"
-    CANDIDATE = "candidate"
-    TRIGGERED = "triggered"
-    COOLDOWN = "cooldown"
 
 
 class GestureTriggerStateMachine:
@@ -43,13 +20,13 @@ class GestureTriggerStateMachine:
         self.window_size = window_size
         self.release_absent_seconds = release_absent_seconds
         self.cooldown_seconds = cooldown_seconds
-        self.phase = GesturePhase.IDLE
+        self.phase = "idle"
         self._samples: Deque[bool] = deque(maxlen=window_size)
         self._absent_since: float | None = None
         self._cooldown_until = 0.0
 
     def reset(self):
-        self.phase = GesturePhase.IDLE
+        self.phase = "idle"
         self._samples.clear()
         self._absent_since = None
         self._cooldown_until = 0.0
@@ -63,18 +40,18 @@ class GestureTriggerStateMachine:
         elif self._absent_since is None:
             self._absent_since = now
 
-        if self.phase == GesturePhase.COOLDOWN:
+        if self.phase == "cooldown":
             if now < self._cooldown_until:
                 return False
-            self.phase = GesturePhase.IDLE
+            self.phase = "idle"
             self._samples.clear()
 
-        if self.phase == GesturePhase.TRIGGERED:
+        if self.phase == "triggered":
             if (
                 self._absent_since is not None
                 and now - self._absent_since >= self.release_absent_seconds
             ):
-                self.phase = GesturePhase.COOLDOWN
+                self.phase = "cooldown"
                 self._cooldown_until = now + self.cooldown_seconds
                 self._samples.clear()
             return False
@@ -83,12 +60,12 @@ class GestureTriggerStateMachine:
         hits = sum(self._samples)
 
         if hits > 0:
-            self.phase = GesturePhase.CANDIDATE
+            self.phase = "candidate"
         else:
-            self.phase = GesturePhase.IDLE
+            self.phase = "idle"
 
         if len(self._samples) >= self.required_hits and hits >= self.required_hits:
-            self.phase = GesturePhase.TRIGGERED
+            self.phase = "triggered"
             self._samples.clear()
             return True
 

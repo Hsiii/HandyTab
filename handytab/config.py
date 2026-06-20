@@ -42,16 +42,12 @@ ICON_PATH = _resource_path(os.path.join("assets", "icon.png"))
 import json
 from urllib.parse import urlparse
 
-from .target import Target
-
 # --- Target Action ---
 _CONFIG_FILE = os.path.expanduser("~/.handytab_config.json")
 
-_DEFAULT_TARGET = Target(
-    gesture="Open_Palm",
-    url="https://hsichen.dev",
-    browser=None,
-)
+_DEFAULT_GESTURE = "Open_Palm"
+_DEFAULT_URL = "https://hsichen.dev"
+_DEFAULT_BROWSER = None
 _DEFAULT_CAMERA_TRIGGER_ENABLED = False
 _DEFAULT_TRACKPAD_TRIGGER_ENABLED = True
 
@@ -76,43 +72,27 @@ def normalize_target_url(value: str) -> str:
     return url
 
 
-def load_target() -> Target:
+def load_target() -> tuple[str, str, str | None]:
     """Load the active target from disk, falling back to defaults."""
-    if os.path.exists(_CONFIG_FILE):
-        try:
-            with open(_CONFIG_FILE, "r") as f:
-                data = json.load(f)
-            return Target(
-                gesture=data.get("gesture", _DEFAULT_TARGET.gesture),
-                url=normalize_target_url(data.get("target_url", _DEFAULT_TARGET.url)),
-                browser=data.get("browser") or None,
-            )
-        except Exception:
-            pass
-    return Target(
-        gesture=_DEFAULT_TARGET.gesture,
-        url=_DEFAULT_TARGET.url,
-        browser=_DEFAULT_TARGET.browser,
-    )
-
-
-def save_target(target: Target):
-    """Persist the active target to disk."""
-    data = {}
-    if os.path.exists(_CONFIG_FILE):
-        try:
-            with open(_CONFIG_FILE, "r") as f:
-                data = json.load(f)
-        except Exception:
-            pass
-    data["gesture"] = target.gesture
-    data["target_url"] = normalize_target_url(target.url)
-    data["browser"] = target.browser
     try:
-        with open(_CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+        data = _load_config_data()
+        return (
+            data.get("gesture", _DEFAULT_GESTURE),
+            normalize_target_url(data.get("target_url", _DEFAULT_URL)),
+            data.get("browser") or None,
+        )
     except Exception:
         pass
+    return _DEFAULT_GESTURE, _DEFAULT_URL, _DEFAULT_BROWSER
+
+
+def save_target(gesture: str, url: str, browser: str | None):
+    """Persist the active target to disk."""
+    data = _load_config_data()
+    data["gesture"] = gesture
+    data["target_url"] = normalize_target_url(url)
+    data["browser"] = browser
+    _save_config_data(data)
 
 
 def _load_config_data() -> dict:
@@ -166,9 +146,6 @@ MIN_HAND_BOX_RATIO = 0.16     # Reject tiny far-away hands and classifier noise
 HAND_EDGE_MARGIN_RATIO = 0.03 # Reject hands clipped hard against the frame edge
 MIN_OPEN_PALM_EXTENDED_FINGERS = 3
 MIN_OPEN_PALM_SPREAD_RATIO = 0.45
-
-# --- Gesture ---
-# TARGET_GESTURE is now owned by Target (loaded via config.load_target()).
 
 # --- Logging ---
 LOG_DIR = os.path.expanduser("~/Library/Logs/HandyTab")
