@@ -135,8 +135,8 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
 TRIGGER_CONFIDENCE_THRESHOLD = 0.45  # Confidence required for a positive window hit
 RELEASE_CONFIDENCE_THRESHOLD = 0.25  # Lower threshold keeps the latch stable near the edge
 COOLDOWN_SECONDS = 0.7        # Prevent instant open-close-open retriggers
-GESTURE_WINDOW_FRAMES = 5     # Rolling frame window used for confirmation
-GESTURE_REQUIRED_HITS = 3     # Trigger when this many window samples are positive
+GESTURE_WINDOW_FRAMES = 4     # Rolling frame window used for confirmation
+GESTURE_REQUIRED_HITS = 2     # Trigger when this many window samples are positive
 RELEASE_ABSENT_SECONDS = 0.35 # Gesture must be absent this long before rearming
 FRAME_SKIP = 3                # Process 1-in-3 frames -> ~10 fps effective recognition
 CAMERA_WIDTH = 320            # Half-res is sufficient for gesture recognition
