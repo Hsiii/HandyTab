@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 
+from Cocoa import NSEvent
 import rumps
 from PyObjCTools import AppHelper
 
@@ -47,9 +48,6 @@ class HandyTabApp(rumps.App):
     """Menu bar application for HandyTab."""
 
     APP_TITLE = None
-    OPEN_PALM_LABEL = "Open Palm"
-    CLOSED_FIST_LABEL = "Closed Fist"
-    NO_HAND_LABEL = "No Hand"
     LOGIN_ITEM_NAME = "HandyTab"
 
     def __init__(self):
@@ -73,14 +71,7 @@ class HandyTabApp(rumps.App):
             on_error=self._on_error,
         )
 
-        # --- Three-finger tap alternative trigger ---
-        try:
-            from .macos_gesture_listener import ThreeFingerTapListener
-
-            self._three_finger_listener = ThreeFingerTapListener(self._on_three_finger_tap)
-            logger.info("Three-finger tap listener initialized.")
-        except Exception as e:
-            logger.warning(f"Three-finger tap listener could not be initialized: {e}")
+        self._three_finger_monitor = None
 
         # --- Menu ---
         self.camera_trigger_item = rumps.MenuItem("", callback=self._toggle_camera_trigger)
@@ -117,8 +108,28 @@ class HandyTabApp(rumps.App):
         )
         self._refresh_trigger_menu_titles()
         self._refresh_start_at_login_title()
+        AppHelper.callAfter(self._install_three_finger_monitor)
         if self.camera_trigger_enabled:
             self._start_detection()
+
+    def _install_three_finger_monitor(self):
+        if self._three_finger_monitor is not None:
+            return
+        try:
+            self._three_finger_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEvent.NSGesture,
+                self._handle_trackpad_event,
+            )
+            logger.info("Three-finger tap listener initialized.")
+        except Exception as e:
+            logger.warning("Three-finger tap listener could not be initialized: %s", e)
+
+    def _handle_trackpad_event(self, event):
+        gesture_recognizer = getattr(event, "gestureRecognizer", lambda: None)()
+        if gesture_recognizer is None:
+            return
+        if event.type() == NSEvent.NSGesture and gesture_recognizer.numberOfTouches() == 3:
+            self._on_three_finger_tap()
 
     def _on_three_finger_tap(self):
         logger.info("Three-finger tap detected (trackpad)")
@@ -330,7 +341,7 @@ class HandyTabApp(rumps.App):
         if source == "trackpad" and not self.trackpad_trigger_enabled:
             return
         logger.info("Trigger received from %s: %s", source, name)
-        self._dispatch_ui(self._open_target_url)
+        AppHelper.callAfter(self._open_target_url)
 
     def _on_error(self, error_msg: str):
         """Handle errors from the detector."""
@@ -348,11 +359,7 @@ class HandyTabApp(rumps.App):
                 message=error_msg,
             )
 
-        self._dispatch_ui(update_ui)
-
-    def _dispatch_ui(self, callback):
-        """Schedule AppKit work onto the main run loop."""
-        AppHelper.callAfter(callback)
+        AppHelper.callAfter(update_ui)
 
     def _open_target_url(self) -> bool:
         """Open the configured target URL, respecting the cooldown."""
