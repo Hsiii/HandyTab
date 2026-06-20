@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class GestureDetector:
     """Runs gesture detection on a background thread.
 
-    Calls `on_gesture(event)` whenever the target gesture is confirmed.
+    Calls `on_gesture(name, confidence)` whenever a gesture is confirmed.
     """
 
     def __init__(
@@ -198,19 +198,26 @@ class GestureDetector:
             top_gesture = result.gestures[0][0]
             gesture_name = top_gesture.category_name
             confidence = top_gesture.score
-            quality_ok = self._hand_quality_ok(result)
+        else:
+            logger.debug("Frame %d (ts=%dms): no gesture", frame_count, timestamp_ms)
+
+        custom_gesture = self._custom_landmark_gesture(result)
+        if custom_gesture is not None:
+            gesture_name = custom_gesture
+            confidence = config.CUSTOM_THUMB_DOWN_CONFIDENCE
+
+        if gesture_name != "No_Hand":
+            quality_ok = self._hand_quality_ok(result, gesture_name)
 
             logger.debug("Frame %d (ts=%dms): %s (%.2f)",
                          frame_count, timestamp_ms, gesture_name, confidence)
 
             candidate = (
-                gesture_name == self.target_gesture
+                gesture_name in {self.target_gesture, "Thumb_Down"}
                 and confidence >= config.RELEASE_CONFIDENCE_THRESHOLD
                 and quality_ok
             )
             trigger_ready = candidate and confidence >= config.TRIGGER_CONFIDENCE_THRESHOLD
-        else:
-            logger.debug("Frame %d (ts=%dms): no gesture", frame_count, timestamp_ms)
 
         if self._state.observe(candidate=candidate, trigger_ready=trigger_ready):
             logger.info(
@@ -222,7 +229,37 @@ class GestureDetector:
             )
             self.on_gesture(gesture_name, confidence)
 
-    def _hand_quality_ok(self, result) -> bool:
+    def _custom_landmark_gesture(self, result) -> str | None:
+        hand_landmarks = getattr(result, "hand_landmarks", None)
+        if not hand_landmarks:
+            return None
+
+        landmarks = hand_landmarks[0]
+        if self._thumb_points_down(landmarks) and self._non_thumb_fingers_curled(landmarks):
+            return "Thumb_Down"
+        return None
+
+    def _thumb_points_down(self, landmarks) -> bool:
+        thumb_tip = landmarks[4]
+        thumb_ip = landmarks[3]
+        thumb_mcp = landmarks[2]
+        wrist = landmarks[0]
+
+        thumb_drop = thumb_tip.y - thumb_mcp.y
+        wrist_to_mcp = abs(thumb_mcp.y - wrist.y) or 1.0
+        return (
+            thumb_tip.y > thumb_ip.y > thumb_mcp.y
+            and thumb_drop / wrist_to_mcp >= config.MIN_THUMB_DOWN_DROP_RATIO
+        )
+
+    def _non_thumb_fingers_curled(self, landmarks) -> bool:
+        finger_pairs = ((8, 6), (12, 10), (16, 14), (20, 18))
+        return all(
+            landmarks[tip].y - landmarks[pip].y >= config.MIN_THUMB_DOWN_FINGER_CURL_RATIO
+            for tip, pip in finger_pairs
+        )
+
+    def _hand_quality_ok(self, result, gesture_name: str) -> bool:
         """Reject low-quality hand poses before they can trigger actions."""
         hand_landmarks = getattr(result, "hand_landmarks", None)
         if not hand_landmarks:
@@ -246,7 +283,7 @@ class GestureDetector:
             logger.debug("Rejecting gesture: hand too close to frame edge")
             return False
 
-        if self.target_gesture != "Open_Palm":
+        if gesture_name != "Open_Palm":
             return True
 
         finger_pairs = ((8, 6), (12, 10), (16, 14), (20, 18))

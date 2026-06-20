@@ -60,7 +60,8 @@ class HandyTabApp(rumps.App):
         )
 
         # --- State ---
-        self._last_trigger_time = 0.0
+        self._last_open_time = 0.0
+        self._last_close_time = 0.0
         self._gesture, self._url, self._browser = config.load_target()
         self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
             config.load_trigger_settings()
@@ -357,7 +358,10 @@ class HandyTabApp(rumps.App):
         if source == "trackpad" and not self.trackpad_trigger_enabled:
             return
         logger.info("Trigger received from %s: %s", source, name)
-        AppHelper.callAfter(self._open_target_url)
+        if name == "Thumb_Down":
+            AppHelper.callAfter(self._close_current_tab)
+        else:
+            AppHelper.callAfter(self._open_target_url)
 
     def _on_error(self, error_msg: str):
         """Handle errors from the detector."""
@@ -379,7 +383,7 @@ class HandyTabApp(rumps.App):
 
     def _open_target_url(self) -> bool:
         """Open the configured target URL, respecting the cooldown."""
-        if (time.time() - self._last_trigger_time) < config.COOLDOWN_SECONDS:
+        if (time.time() - self._last_open_time) < config.COOLDOWN_SECONDS:
             return False
 
         url = self._url
@@ -403,17 +407,40 @@ class HandyTabApp(rumps.App):
                 return False
 
             logger.info("Opened %s (Browser: %s)", url, browser or "System Default")
-            self._last_trigger_time = time.time()
+            self._last_open_time = time.time()
             return True
         except subprocess.TimeoutExpired:
             logger.info("Opened %s (Browser: %s) [Async]", url, browser or "System Default")
-            self._last_trigger_time = time.time()
+            self._last_open_time = time.time()
             return True
         except FileNotFoundError:
             logger.error("'open' command not found — are you on macOS?")
             return False
         except Exception as exc:
             logger.error("Failed to open URL: %s", exc)
+            return False
+
+    def _close_current_tab(self) -> bool:
+        """Close the current tab by sending Command-W."""
+        if (time.time() - self._last_close_time) < config.COOLDOWN_SECONDS:
+            return False
+
+        escaped_browser = self._browser.replace("\\", "\\\\").replace('"', '\\"') if self._browser else None
+        script = (
+            f'tell application "{escaped_browser}" to activate\n'
+            'delay 0.05\n'
+            'tell application "System Events" to keystroke "w" using command down'
+            if escaped_browser else
+            'tell application "System Events" to keystroke "w" using command down'
+        )
+
+        try:
+            self._run_osascript(script)
+            self._last_close_time = time.time()
+            logger.info("Closed current tab (Browser: %s)", self._browser or "Frontmost App")
+            return True
+        except Exception as exc:
+            logger.error("Failed to close current tab: %s", exc)
             return False
 
     def _quit(self, sender):

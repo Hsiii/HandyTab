@@ -135,6 +135,7 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
 TRIGGER_CONFIDENCE_THRESHOLD = 0.45  # Confidence required for a positive window hit
 RELEASE_CONFIDENCE_THRESHOLD = 0.25  # Lower threshold keeps the latch stable near the edge
 COOLDOWN_SECONDS = 0.7        # Prevent instant open-close-open retriggers
+CUSTOM_THUMB_DOWN_CONFIDENCE = 0.95
 GESTURE_WINDOW_FRAMES = 5     # Rolling frame window used for confirmation
 GESTURE_REQUIRED_HITS = 3     # Trigger when this many window samples are positive
 RELEASE_ABSENT_SECONDS = 0.35 # Gesture must be absent this long before rearming
@@ -146,6 +147,8 @@ MIN_HAND_BOX_RATIO = 0.16     # Reject tiny far-away hands and classifier noise
 HAND_EDGE_MARGIN_RATIO = 0.03 # Reject hands clipped hard against the frame edge
 MIN_OPEN_PALM_EXTENDED_FINGERS = 3
 MIN_OPEN_PALM_SPREAD_RATIO = 0.45
+MIN_THUMB_DOWN_DROP_RATIO = 0.25
+MIN_THUMB_DOWN_FINGER_CURL_RATIO = 0.02
 
 # --- Logging ---
 LOG_DIR = os.path.expanduser("~/Library/Logs/HandyTab")
