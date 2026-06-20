@@ -49,7 +49,8 @@ _DEFAULT_GESTURE = "Open_Palm"
 _DEFAULT_URL = "https://hsichen.dev"
 _DEFAULT_BROWSER = None
 _DEFAULT_CAMERA_TRIGGER_ENABLED = False
-_DEFAULT_TRACKPAD_TRIGGER_ENABLED = True
+_DEFAULT_TRACKPAD_TRIGGER_ENABLED = False
+_TRACKPAD_TRIGGER_KEY = "trackpad_tap_enabled"
 
 
 def normalize_target_url(value: str) -> str:
@@ -118,7 +119,7 @@ def load_trigger_settings() -> tuple[bool, bool]:
     data = _load_config_data()
     return (
         bool(data.get("camera_trigger_enabled", _DEFAULT_CAMERA_TRIGGER_ENABLED)),
-        bool(data.get("trackpad_trigger_enabled", _DEFAULT_TRACKPAD_TRIGGER_ENABLED)),
+        bool(data.get(_TRACKPAD_TRIGGER_KEY, _DEFAULT_TRACKPAD_TRIGGER_ENABLED)),
     )
 
 
@@ -126,7 +127,7 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
     """Persist enabled trigger sources."""
     data = _load_config_data()
     data["camera_trigger_enabled"] = camera_enabled
-    data["trackpad_trigger_enabled"] = trackpad_enabled
+    data[_TRACKPAD_TRIGGER_KEY] = trackpad_enabled
     _save_config_data(data)
 
 

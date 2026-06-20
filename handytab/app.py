@@ -108,7 +108,8 @@ class HandyTabApp(rumps.App):
         )
         self._refresh_trigger_menu_titles()
         self._refresh_start_at_login_title()
-        AppHelper.callAfter(self._install_three_finger_monitor)
+        if self.trackpad_trigger_enabled:
+            AppHelper.callAfter(self._install_three_finger_monitor)
         if self.camera_trigger_enabled:
             self._start_detection()
 
@@ -123,6 +124,17 @@ class HandyTabApp(rumps.App):
             logger.info("Three-finger tap listener initialized.")
         except Exception as e:
             logger.warning("Three-finger tap listener could not be initialized: %s", e)
+
+    def _remove_three_finger_monitor(self):
+        if self._three_finger_monitor is None:
+            return
+        try:
+            NSEvent.removeMonitor_(self._three_finger_monitor)
+            logger.info("Three-finger tap listener removed.")
+        except Exception as e:
+            logger.warning("Three-finger tap listener could not be removed: %s", e)
+        finally:
+            self._three_finger_monitor = None
 
     def _handle_trackpad_event(self, event):
         gesture_recognizer = getattr(event, "gestureRecognizer", lambda: None)()
@@ -152,6 +164,10 @@ class HandyTabApp(rumps.App):
     def _toggle_trackpad_trigger(self, sender):
         """Enable or disable the trackpad trigger."""
         self.trackpad_trigger_enabled = not self.trackpad_trigger_enabled
+        if self.trackpad_trigger_enabled:
+            self._install_three_finger_monitor()
+        else:
+            self._remove_three_finger_monitor()
         self._save_trigger_settings()
         self._refresh_trigger_menu_titles()
 
@@ -407,6 +423,7 @@ class HandyTabApp(rumps.App):
 
     def _cleanup(self):
         """Release resources."""
+        self._remove_three_finger_monitor()
         if self.detector.is_running:
             self.detector.stop()
         logger.info("HandyTab shutting down")
