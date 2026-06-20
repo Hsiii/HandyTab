@@ -439,27 +439,65 @@ class HandyTabApp(rumps.App):
             return False
 
     def _close_current_tab(self) -> bool:
-        """Close the current tab by sending Command-W."""
+        """Close the active browser tab using the browser's AppleScript API."""
         if (time.time() - self._last_close_time) < config.COOLDOWN_SECONDS:
             return False
 
-        escaped_browser = self._browser.replace("\\", "\\\\").replace('"', '\\"') if self._browser else None
-        script = (
-            f'tell application "{escaped_browser}" to activate\n'
-            'delay 0.05\n'
-            'tell application "System Events" to keystroke "w" using command down'
-            if escaped_browser else
-            'tell application "System Events" to keystroke "w" using command down'
-        )
+        browser = self._browser or self._frontmost_app_name()
+        script = self._browser_close_tab_script(browser)
+        if script is None:
+            logger.error("No stable tab-close AppleScript support for: %s", browser or "Unknown")
+            return False
 
         try:
             self._run_osascript(script)
             self._last_close_time = time.time()
-            logger.info("Closed current tab (Browser: %s)", self._browser or "Frontmost App")
+            logger.info("Closed current tab (Browser: %s)", browser)
             return True
         except Exception as exc:
             logger.error("Failed to close current tab: %s", exc)
             return False
+
+    def _frontmost_app_name(self) -> str | None:
+        script = (
+            'tell application "System Events" to get name of first application process '
+            "whose frontmost is true"
+        )
+        result = self._run_osascript(script, check=False)
+        return result.stdout.strip() or None
+
+    def _browser_close_tab_script(self, browser: str | None) -> str | None:
+        if not browser:
+            return None
+
+        escaped_browser = browser.replace("\\", "\\\\").replace('"', '\\"')
+        browser_key = browser.casefold()
+
+        if browser_key == "safari":
+            return (
+                f'tell application "{escaped_browser}"\n'
+                "if exists front window then close current tab of front window\n"
+                "end tell"
+            )
+
+        chromium_browsers = {
+            "arc",
+            "brave browser",
+            "chromium",
+            "dia",
+            "google chrome",
+            "microsoft edge",
+            "opera",
+            "vivaldi",
+        }
+        if browser_key in chromium_browsers:
+            return (
+                f'tell application "{escaped_browser}"\n'
+                "if exists front window then close active tab of front window\n"
+                "end tell"
+            )
+
+        return None
 
     def _quit(self, sender):
         """Clean up and quit."""
