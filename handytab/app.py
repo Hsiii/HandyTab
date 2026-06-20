@@ -63,9 +63,11 @@ class HandyTabApp(rumps.App):
         )
 
         # --- State ---
-        self.detecting = False
         self._last_trigger_time = 0.0
         self._target: Target = config.load_target()
+        self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
+            config.load_trigger_settings()
+        )
         self.detector = GestureDetector(
             target_gesture=self._target.gesture,
             on_gesture=self._on_gesture_detected,
@@ -82,7 +84,8 @@ class HandyTabApp(rumps.App):
             logger.warning(f"Three-finger tap listener could not be initialized: {e}")
 
         # --- Menu ---
-        self.toggle_button = rumps.MenuItem("Start Detection", callback=self._toggle_detection)
+        self.camera_trigger_item = rumps.MenuItem("", callback=self._toggle_camera_trigger)
+        self.trackpad_trigger_item = rumps.MenuItem("", callback=self._toggle_trackpad_trigger)
         self.edit_url_item = rumps.MenuItem(
             f"Target: {self._target.url}", callback=self._edit_target_url
         )
@@ -91,7 +94,8 @@ class HandyTabApp(rumps.App):
         )
 
         self.menu = [
-            self.toggle_button,
+            self.camera_trigger_item,
+            self.trackpad_trigger_item,
             None,
             self.edit_url_item,
             self.edit_browser_item,
@@ -103,11 +107,16 @@ class HandyTabApp(rumps.App):
         atexit.register(self._cleanup)
 
         logger.info(
-            "HandyTab app initialized (gesture: %s → %s, browser: %s)",
+            "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s)",
             self._target.gesture,
             self._target.url,
             self._target.browser_label,
+            self.camera_trigger_enabled,
+            self.trackpad_trigger_enabled,
         )
+        self._refresh_trigger_menu_titles()
+        if self.camera_trigger_enabled:
+            self._start_detection()
 
     def _on_three_finger_tap(self):
         logger.info("Three-finger tap detected (trackpad)")
@@ -118,12 +127,35 @@ class HandyTabApp(rumps.App):
             )
         )
 
-    def _toggle_detection(self, sender):
-        """Start or stop gesture detection."""
-        if self.detecting:
-            self._stop_detection()
-        else:
+    def _toggle_camera_trigger(self, sender):
+        """Enable or disable camera gesture detection."""
+        self.camera_trigger_enabled = not self.camera_trigger_enabled
+        if self.camera_trigger_enabled:
             self._start_detection()
+        else:
+            self._stop_detection()
+        self._save_trigger_settings()
+        self._refresh_trigger_menu_titles()
+
+    def _toggle_trackpad_trigger(self, sender):
+        """Enable or disable the trackpad trigger."""
+        self.trackpad_trigger_enabled = not self.trackpad_trigger_enabled
+        self._save_trigger_settings()
+        self._refresh_trigger_menu_titles()
+
+    def _save_trigger_settings(self):
+        config.save_trigger_settings(
+            camera_enabled=self.camera_trigger_enabled,
+            trackpad_enabled=self.trackpad_trigger_enabled,
+        )
+
+    def _refresh_trigger_menu_titles(self):
+        self.camera_trigger_item.title = (
+            "Camera Gesture: On" if self.camera_trigger_enabled else "Camera Gesture: Off"
+        )
+        self.trackpad_trigger_item.title = (
+            "Trackpad Tap: On" if self.trackpad_trigger_enabled else "Trackpad Tap: Off"
+        )
 
     def _edit_target_url(self, sender):
         """Prompt the user to change the target URL."""
@@ -186,16 +218,12 @@ class HandyTabApp(rumps.App):
 
     def _start_detection(self):
         """Start the gesture detector."""
-        self.detecting = True
-        self.toggle_button.title = "Pause Detection"
         self.title = self.APP_TITLE
         self.detector.start()
         logger.info("Detection started by user")
 
     def _stop_detection(self):
         """Stop the gesture detector."""
-        self.detecting = False
-        self.toggle_button.title = "Start Detection"
         self.title = self.APP_TITLE
         self.detector.stop()
         logger.info("Detection paused by user")
@@ -207,6 +235,10 @@ class HandyTabApp(rumps.App):
 
     def _handle_trigger(self, event: TriggerEvent):
         """Route any enabled input trigger to the configured target action."""
+        if event.source == TriggerSource.CAMERA and not self.camera_trigger_enabled:
+            return
+        if event.source == TriggerSource.TRACKPAD and not self.trackpad_trigger_enabled:
+            return
         logger.info("Trigger received from %s: %s", event.source.value, event.name)
         self._dispatch_ui(self._open_target_url)
 
@@ -215,8 +247,9 @@ class HandyTabApp(rumps.App):
         logger.error("Detector error: %s", error_msg)
         
         def update_ui():
-            self.detecting = False
-            self.toggle_button.title = "Start Detection"
+            self.camera_trigger_enabled = False
+            self._save_trigger_settings()
+            self._refresh_trigger_menu_titles()
             self.title = self.APP_TITLE
 
             rumps.notification(

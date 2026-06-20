@@ -51,6 +51,8 @@ _DEFAULT_TARGET = Target(
     url="https://hsichen.dev",
     browser=None,
 )
+_DEFAULT_CAMERA_TRIGGER_ENABLED = False
+_DEFAULT_TRACKPAD_TRIGGER_ENABLED = True
 
 
 def load_target() -> Target:
@@ -90,6 +92,41 @@ def save_target(target: Target):
             json.dump(data, f, indent=2)
     except Exception:
         pass
+
+
+def _load_config_data() -> dict:
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_config_data(data: dict):
+    try:
+        with open(_CONFIG_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def load_trigger_settings() -> tuple[bool, bool]:
+    """Load whether camera and trackpad triggers are enabled."""
+    data = _load_config_data()
+    return (
+        bool(data.get("camera_trigger_enabled", _DEFAULT_CAMERA_TRIGGER_ENABLED)),
+        bool(data.get("trackpad_trigger_enabled", _DEFAULT_TRACKPAD_TRIGGER_ENABLED)),
+    )
+
+
+def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
+    """Persist enabled trigger sources."""
+    data = _load_config_data()
+    data["camera_trigger_enabled"] = camera_enabled
+    data["trackpad_trigger_enabled"] = trackpad_enabled
+    _save_config_data(data)
 
 
 # --- Detection Tuning ---
