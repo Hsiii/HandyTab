@@ -22,15 +22,18 @@ class GestureDetector:
         self,
         target_gesture: str,
         on_gesture: Callable[[str, float], None],
+        on_observation: Optional[Callable[[str, float], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
     ):
         """Args:
             target_gesture:  MediaPipe category name to watch for, e.g. "Open_Palm".
             on_gesture:      Called when target gesture is confirmed.
+            on_observation:  Called with the latest observed gesture each processed frame.
             on_error:        Called on fatal errors.
         """
         self.target_gesture = target_gesture
         self.on_gesture = on_gesture
+        self.on_observation = on_observation or (lambda _name, _confidence: None)
         self.on_error = on_error or (lambda e: None)
 
         self._stop_event = threading.Event()
@@ -205,6 +208,8 @@ class GestureDetector:
         if custom_gesture is not None:
             gesture_name = custom_gesture
             confidence = config.CUSTOM_THUMB_DOWN_CONFIDENCE
+
+        self.on_observation(gesture_name, confidence)
 
         if gesture_name != "No_Hand":
             quality_ok = self._hand_quality_ok(result, gesture_name)

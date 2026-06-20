@@ -62,6 +62,7 @@ class HandyTabApp(rumps.App):
         # --- State ---
         self._last_open_time = 0.0
         self._last_close_time = 0.0
+        self._last_status_title = self.APP_TITLE
         self._gesture, self._url, self._browser = config.load_target()
         self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
             config.load_trigger_settings()
@@ -69,6 +70,7 @@ class HandyTabApp(rumps.App):
         self.detector = GestureDetector(
             target_gesture=self._gesture,
             on_gesture=self._on_gesture_detected,
+            on_observation=self._on_gesture_observed,
             on_error=self._on_error,
         )
 
@@ -336,20 +338,36 @@ class HandyTabApp(rumps.App):
 
     def _start_detection(self):
         """Start the gesture detector."""
-        self.title = self.APP_TITLE
+        self._set_status_title("Watching 0%")
         self.detector.start()
         logger.info("Detection started by user")
 
     def _stop_detection(self):
         """Stop the gesture detector."""
-        self.title = self.APP_TITLE
+        self._set_status_title(self.APP_TITLE)
         self.detector.stop()
         logger.info("Detection paused by user")
+
+    def _on_gesture_observed(self, gesture_name: str, confidence: float):
+        AppHelper.callAfter(
+            self._set_status_title,
+            self._format_gesture_status(gesture_name, confidence),
+        )
 
     def _on_gesture_detected(self, gesture_name: str, confidence: float):
         """Callback when the target gesture is confirmed."""
         logger.info("Gesture callback: %s (%.2f)", gesture_name, confidence)
         self._handle_trigger("camera", gesture_name)
+
+    def _format_gesture_status(self, gesture_name: str, confidence: float) -> str:
+        label = gesture_name.replace("_", " ")
+        return f"{label} {confidence:.0%}"
+
+    def _set_status_title(self, title: str | None):
+        if title == self._last_status_title:
+            return
+        self.title = title
+        self._last_status_title = title
 
     def _handle_trigger(self, source: str, name: str):
         """Route any enabled input trigger to the configured target action."""
@@ -371,7 +389,7 @@ class HandyTabApp(rumps.App):
             self.camera_trigger_enabled = False
             self._save_trigger_settings()
             self._refresh_trigger_menu_titles()
-            self.title = self.APP_TITLE
+            self._set_status_title(self.APP_TITLE)
 
             rumps.notification(
                 title="HandyTab Error",
