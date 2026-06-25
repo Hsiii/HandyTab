@@ -50,7 +50,10 @@ _DEFAULT_URL = "https://hsichen.dev"
 _DEFAULT_BROWSER = None
 _DEFAULT_CAMERA_TRIGGER_ENABLED = False
 _DEFAULT_TRACKPAD_TRIGGER_ENABLED = False
+_DEFAULT_TRACKPAD_TOUCH_COUNT = 3
 _TRACKPAD_TRIGGER_KEY = "trackpad_tap_enabled"
+_TRACKPAD_TOUCH_COUNT_KEY = "trackpad_touch_count"
+TRACKPAD_TOUCH_COUNT_OPTIONS = (2, 3, 4)
 
 
 def normalize_target_url(value: str) -> str:
@@ -129,6 +132,29 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
     data["camera_trigger_enabled"] = camera_enabled
     data[_TRACKPAD_TRIGGER_KEY] = trackpad_enabled
     _save_config_data(data)
+
+
+def load_trackpad_touch_count() -> int:
+    """Load the number of fingers required for the trackpad trigger."""
+    data = _load_config_data()
+    return normalize_trackpad_touch_count(data.get(_TRACKPAD_TOUCH_COUNT_KEY))
+
+
+def save_trackpad_touch_count(touch_count: int):
+    """Persist the number of fingers required for the trackpad trigger."""
+    data = _load_config_data()
+    data[_TRACKPAD_TOUCH_COUNT_KEY] = normalize_trackpad_touch_count(touch_count)
+    _save_config_data(data)
+
+
+def normalize_trackpad_touch_count(value) -> int:
+    try:
+        touch_count = int(value)
+    except (TypeError, ValueError):
+        return _DEFAULT_TRACKPAD_TOUCH_COUNT
+    if touch_count not in TRACKPAD_TOUCH_COUNT_OPTIONS:
+        return _DEFAULT_TRACKPAD_TOUCH_COUNT
+    return touch_count
 
 
 # --- Detection Tuning ---

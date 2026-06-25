@@ -67,6 +67,7 @@ class HandyTabApp(rumps.App):
         self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
             config.load_trigger_settings()
         )
+        self.trackpad_touch_count = config.load_trackpad_touch_count()
         self.detector = GestureDetector(
             target_gesture=self._gesture,
             on_gesture=self._on_gesture_detected,
@@ -74,11 +75,14 @@ class HandyTabApp(rumps.App):
             on_error=self._on_error,
         )
 
-        self._three_finger_monitor = None
+        self._trackpad_monitor = None
 
         # --- Menu ---
         self.camera_trigger_item = rumps.MenuItem("", callback=self._toggle_camera_trigger)
         self.trackpad_trigger_item = rumps.MenuItem("", callback=self._toggle_trackpad_trigger)
+        self.trackpad_touch_count_item = rumps.MenuItem(
+            "", callback=self._cycle_trackpad_touch_count
+        )
         self.edit_url_item = rumps.MenuItem(
             f"Target: {self._url}", callback=self._edit_target_url
         )
@@ -90,6 +94,7 @@ class HandyTabApp(rumps.App):
         self.menu = [
             self.camera_trigger_item,
             self.trackpad_trigger_item,
+            self.trackpad_touch_count_item,
             None,
             self.edit_url_item,
             self.edit_browser_item,
@@ -102,46 +107,50 @@ class HandyTabApp(rumps.App):
         atexit.register(self._cleanup)
 
         logger.info(
-            "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s)",
+            "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s, trackpad fingers: %d)",
             self._gesture,
             self._url,
             self._browser_label,
             self.camera_trigger_enabled,
             self.trackpad_trigger_enabled,
+            self.trackpad_touch_count,
         )
         self._refresh_trigger_menu_titles()
         self._refresh_start_at_login_title()
         if self.trackpad_trigger_enabled:
-            AppHelper.callAfter(self._install_three_finger_monitor)
+            AppHelper.callAfter(self._install_trackpad_monitor)
         if self.camera_trigger_enabled:
             self._start_detection()
 
-    def _install_three_finger_monitor(self):
-        if self._three_finger_monitor is not None:
+    def _install_trackpad_monitor(self):
+        if self._trackpad_monitor is not None:
             return
         try:
-            self._three_finger_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            self._trackpad_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
                 NSEventMaskGesture,
                 self._handle_trackpad_event,
             )
-            logger.info("Three-finger tap listener initialized.")
+            logger.info("Trackpad gesture listener initialized.")
         except Exception as e:
-            logger.warning("Three-finger tap listener could not be initialized: %s", e)
+            logger.warning("Trackpad gesture listener could not be initialized: %s", e)
 
-    def _remove_three_finger_monitor(self):
-        if self._three_finger_monitor is None:
+    def _remove_trackpad_monitor(self):
+        if self._trackpad_monitor is None:
             return
         try:
-            NSEvent.removeMonitor_(self._three_finger_monitor)
-            logger.info("Three-finger tap listener removed.")
+            NSEvent.removeMonitor_(self._trackpad_monitor)
+            logger.info("Trackpad gesture listener removed.")
         except Exception as e:
-            logger.warning("Three-finger tap listener could not be removed: %s", e)
+            logger.warning("Trackpad gesture listener could not be removed: %s", e)
         finally:
-            self._three_finger_monitor = None
+            self._trackpad_monitor = None
 
     def _handle_trackpad_event(self, event):
-        if event.type() == NSEventTypeGesture and self._trackpad_touch_count(event) == 3:
-            self._on_three_finger_tap()
+        if (
+            event.type() == NSEventTypeGesture
+            and self._trackpad_touch_count(event) == self.trackpad_touch_count
+        ):
+            self._on_trackpad_trigger()
 
     def _trackpad_touch_count(self, event) -> int:
         try:
@@ -152,13 +161,21 @@ class HandyTabApp(rumps.App):
             except Exception:
                 return 0
 
-    def _on_three_finger_tap(self):
-        logger.info("Three-finger tap detected (trackpad)")
-        self._handle_trigger("trackpad", "Three_Finger_Tap")
+    def _on_trackpad_trigger(self):
+        logger.info("%s detected (trackpad)", self._trackpad_trigger_label)
+        self._handle_trigger("trackpad", self._trackpad_trigger_name)
 
     @property
     def _browser_label(self) -> str:
         return self._browser or "System Default"
+
+    @property
+    def _trackpad_trigger_label(self) -> str:
+        return f"{self.trackpad_touch_count}-finger gesture"
+
+    @property
+    def _trackpad_trigger_name(self) -> str:
+        return f"{self.trackpad_touch_count}_Finger_Trackpad_Gesture"
 
     def _toggle_camera_trigger(self, sender):
         """Enable or disable camera gesture detection."""
@@ -174,10 +191,22 @@ class HandyTabApp(rumps.App):
         """Enable or disable the trackpad trigger."""
         self.trackpad_trigger_enabled = not self.trackpad_trigger_enabled
         if self.trackpad_trigger_enabled:
-            self._install_three_finger_monitor()
+            self._install_trackpad_monitor()
         else:
-            self._remove_three_finger_monitor()
+            self._remove_trackpad_monitor()
         self._save_trigger_settings()
+        self._refresh_trigger_menu_titles()
+
+    def _cycle_trackpad_touch_count(self, sender):
+        options = config.TRACKPAD_TOUCH_COUNT_OPTIONS
+        current_index = (
+            options.index(self.trackpad_touch_count)
+            if self.trackpad_touch_count in options
+            else -1
+        )
+        self.trackpad_touch_count = options[(current_index + 1) % len(options)]
+        config.save_trackpad_touch_count(self.trackpad_touch_count)
+        logger.info("Trackpad trigger updated to %s", self._trackpad_trigger_label)
         self._refresh_trigger_menu_titles()
 
     def _save_trigger_settings(self):
@@ -191,7 +220,12 @@ class HandyTabApp(rumps.App):
             "Camera Gesture: On" if self.camera_trigger_enabled else "Camera Gesture: Off"
         )
         self.trackpad_trigger_item.title = (
-            "Trackpad Tap: On" if self.trackpad_trigger_enabled else "Trackpad Tap: Off"
+            "Trackpad Gesture: On"
+            if self.trackpad_trigger_enabled
+            else "Trackpad Gesture: Off"
+        )
+        self.trackpad_touch_count_item.title = (
+            f"Trackpad Fingers: {self.trackpad_touch_count}"
         )
 
     def _edit_target_url(self, sender):
@@ -512,7 +546,7 @@ class HandyTabApp(rumps.App):
 
     def _cleanup(self):
         """Release resources."""
-        self._remove_three_finger_monitor()
+        self._remove_trackpad_monitor()
         if self.detector.is_running:
             self.detector.stop()
         logger.info("HandyTab shutting down")
