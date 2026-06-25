@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 
-from Cocoa import NSEvent
+from Cocoa import NSEvent, NSEventMaskGesture, NSEventTypeGesture, NSTouchPhaseTouching
 import rumps
 from PyObjCTools import AppHelper
 
@@ -121,7 +121,7 @@ class HandyTabApp(rumps.App):
             return
         try:
             self._three_finger_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-                NSEvent.NSGesture,
+                NSEventMaskGesture,
                 self._handle_trackpad_event,
             )
             logger.info("Three-finger tap listener initialized.")
@@ -140,11 +140,17 @@ class HandyTabApp(rumps.App):
             self._three_finger_monitor = None
 
     def _handle_trackpad_event(self, event):
-        gesture_recognizer = getattr(event, "gestureRecognizer", lambda: None)()
-        if gesture_recognizer is None:
-            return
-        if event.type() == NSEvent.NSGesture and gesture_recognizer.numberOfTouches() == 3:
+        if event.type() == NSEventTypeGesture and self._trackpad_touch_count(event) == 3:
             self._on_three_finger_tap()
+
+    def _trackpad_touch_count(self, event) -> int:
+        try:
+            return len(event.touchesMatchingPhase_inView_(NSTouchPhaseTouching, None))
+        except Exception:
+            try:
+                return len(event.allTouches())
+            except Exception:
+                return 0
 
     def _on_three_finger_tap(self):
         logger.info("Three-finger tap detected (trackpad)")
