@@ -11,7 +11,22 @@ import subprocess
 import sys
 import time
 
-from Cocoa import NSEvent, NSEventMaskGesture, NSEventTypeGesture, NSTouchPhaseTouching
+from Cocoa import (
+    NSEvent,
+    NSEventMaskBeginGesture,
+    NSEventMaskEndGesture,
+    NSEventMaskMagnify,
+    NSEventMaskRotate,
+    NSEventMaskSmartMagnify,
+    NSEventMaskSwipe,
+    NSEventTypeBeginGesture,
+    NSEventTypeEndGesture,
+    NSEventTypeMagnify,
+    NSEventTypeQuickLook,
+    NSEventTypeRotate,
+    NSEventTypeSmartMagnify,
+    NSEventTypeSwipe,
+)
 import rumps
 from PyObjCTools import AppHelper
 
@@ -44,6 +59,29 @@ def _setup_logging():
 logger = logging.getLogger(__name__)
 
 
+NSEventMaskQuickLook = 1 << NSEventTypeQuickLook
+TRACKPAD_EVENT_MASK = (
+    NSEventMaskBeginGesture
+    | NSEventMaskEndGesture
+    | NSEventMaskMagnify
+    | NSEventMaskRotate
+    | NSEventMaskSmartMagnify
+    | NSEventMaskSwipe
+    | NSEventMaskQuickLook
+)
+TRACKPAD_GESTURE_EVENT_TYPES = {
+    "smart_zoom": {NSEventTypeSmartMagnify},
+    "pinch": {NSEventTypeMagnify},
+    "rotate": {NSEventTypeRotate},
+    "swipe": {NSEventTypeSwipe},
+    "look_up": {NSEventTypeQuickLook},
+}
+TRACKPAD_CONTINUOUS_EVENT_TYPES = {
+    NSEventTypeMagnify,
+    NSEventTypeRotate,
+}
+
+
 class HandyTabApp(rumps.App):
     """Menu bar application for HandyTab."""
 
@@ -67,7 +105,7 @@ class HandyTabApp(rumps.App):
         self.camera_trigger_enabled, self.trackpad_trigger_enabled = (
             config.load_trigger_settings()
         )
-        self.trackpad_touch_count = config.load_trackpad_touch_count()
+        self.trackpad_gesture = config.load_trackpad_gesture()
         self.detector = GestureDetector(
             target_gesture=self._gesture,
             on_gesture=self._on_gesture_detected,
@@ -76,12 +114,14 @@ class HandyTabApp(rumps.App):
         )
 
         self._trackpad_monitor = None
+        self._trackpad_sequence_triggered = False
+        self._last_trackpad_event_time = 0.0
 
         # --- Menu ---
         self.camera_trigger_item = rumps.MenuItem("", callback=self._toggle_camera_trigger)
         self.trackpad_trigger_item = rumps.MenuItem("", callback=self._toggle_trackpad_trigger)
-        self.trackpad_touch_count_item = rumps.MenuItem(
-            "", callback=self._cycle_trackpad_touch_count
+        self.trackpad_gesture_item = rumps.MenuItem(
+            "", callback=self._cycle_trackpad_gesture
         )
         self.edit_url_item = rumps.MenuItem(
             f"Target: {self._url}", callback=self._edit_target_url
@@ -94,7 +134,7 @@ class HandyTabApp(rumps.App):
         self.menu = [
             self.camera_trigger_item,
             self.trackpad_trigger_item,
-            self.trackpad_touch_count_item,
+            self.trackpad_gesture_item,
             None,
             self.edit_url_item,
             self.edit_browser_item,
@@ -107,13 +147,13 @@ class HandyTabApp(rumps.App):
         atexit.register(self._cleanup)
 
         logger.info(
-            "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s, trackpad fingers: %d)",
+            "HandyTab app initialized (gesture: %s → %s, browser: %s, camera: %s, trackpad: %s, trackpad gesture: %s)",
             self._gesture,
             self._url,
             self._browser_label,
             self.camera_trigger_enabled,
             self.trackpad_trigger_enabled,
-            self.trackpad_touch_count,
+            self._trackpad_gesture_label,
         )
         self._refresh_trigger_menu_titles()
         self._refresh_start_at_login_title()
@@ -127,7 +167,7 @@ class HandyTabApp(rumps.App):
             return
         try:
             self._trackpad_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-                NSEventMaskGesture,
+                TRACKPAD_EVENT_MASK,
                 self._handle_trackpad_event,
             )
             logger.info("Trackpad gesture listener initialized.")
@@ -144,25 +184,32 @@ class HandyTabApp(rumps.App):
             logger.warning("Trackpad gesture listener could not be removed: %s", e)
         finally:
             self._trackpad_monitor = None
+            self._trackpad_sequence_triggered = False
 
     def _handle_trackpad_event(self, event):
-        if (
-            event.type() == NSEventTypeGesture
-            and self._trackpad_touch_count(event) == self.trackpad_touch_count
-        ):
-            self._on_trackpad_trigger()
+        event_type = event.type()
+        if event_type == NSEventTypeBeginGesture:
+            self._trackpad_sequence_triggered = False
+            return
+        if event_type == NSEventTypeEndGesture:
+            self._trackpad_sequence_triggered = False
+            return
+        if event_type not in TRACKPAD_GESTURE_EVENT_TYPES.get(self.trackpad_gesture, set()):
+            return
 
-    def _trackpad_touch_count(self, event) -> int:
-        try:
-            return len(event.touchesMatchingPhase_inView_(NSTouchPhaseTouching, None))
-        except Exception:
-            try:
-                return len(event.allTouches())
-            except Exception:
-                return 0
+        if self._trackpad_sequence_triggered:
+            return
+        now = time.monotonic()
+        if now - self._last_trackpad_event_time < config.COOLDOWN_SECONDS:
+            return
+
+        self._last_trackpad_event_time = now
+        if event_type in TRACKPAD_CONTINUOUS_EVENT_TYPES:
+            self._trackpad_sequence_triggered = True
+        self._on_trackpad_trigger()
 
     def _on_trackpad_trigger(self):
-        logger.info("%s detected (trackpad)", self._trackpad_trigger_label)
+        logger.info("%s detected (trackpad)", self._trackpad_gesture_label)
         self._handle_trigger("trackpad", self._trackpad_trigger_name)
 
     @property
@@ -170,12 +217,15 @@ class HandyTabApp(rumps.App):
         return self._browser or "System Default"
 
     @property
-    def _trackpad_trigger_label(self) -> str:
-        return f"{self.trackpad_touch_count}-finger gesture"
+    def _trackpad_gesture_label(self) -> str:
+        return config.TRACKPAD_GESTURE_LABELS.get(
+            self.trackpad_gesture,
+            config.TRACKPAD_GESTURE_LABELS[config.TRACKPAD_GESTURE_OPTIONS[0]],
+        )
 
     @property
     def _trackpad_trigger_name(self) -> str:
-        return f"{self.trackpad_touch_count}_Finger_Trackpad_Gesture"
+        return f"Trackpad_{self.trackpad_gesture}"
 
     def _toggle_camera_trigger(self, sender):
         """Enable or disable camera gesture detection."""
@@ -197,16 +247,17 @@ class HandyTabApp(rumps.App):
         self._save_trigger_settings()
         self._refresh_trigger_menu_titles()
 
-    def _cycle_trackpad_touch_count(self, sender):
-        options = config.TRACKPAD_TOUCH_COUNT_OPTIONS
+    def _cycle_trackpad_gesture(self, sender):
+        options = config.TRACKPAD_GESTURE_OPTIONS
         current_index = (
-            options.index(self.trackpad_touch_count)
-            if self.trackpad_touch_count in options
+            options.index(self.trackpad_gesture)
+            if self.trackpad_gesture in options
             else -1
         )
-        self.trackpad_touch_count = options[(current_index + 1) % len(options)]
-        config.save_trackpad_touch_count(self.trackpad_touch_count)
-        logger.info("Trackpad trigger updated to %s", self._trackpad_trigger_label)
+        self.trackpad_gesture = options[(current_index + 1) % len(options)]
+        self._trackpad_sequence_triggered = False
+        config.save_trackpad_gesture(self.trackpad_gesture)
+        logger.info("Trackpad trigger updated to %s", self._trackpad_gesture_label)
         self._refresh_trigger_menu_titles()
 
     def _save_trigger_settings(self):
@@ -224,9 +275,7 @@ class HandyTabApp(rumps.App):
             if self.trackpad_trigger_enabled
             else "Trackpad Gesture: Off"
         )
-        self.trackpad_touch_count_item.title = (
-            f"Trackpad Fingers: {self.trackpad_touch_count}"
-        )
+        self.trackpad_gesture_item.title = f"Trackpad Action: {self._trackpad_gesture_label}"
 
     def _edit_target_url(self, sender):
         """Prompt the user to change the target URL."""

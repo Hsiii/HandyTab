@@ -50,10 +50,17 @@ _DEFAULT_URL = "https://hsichen.dev"
 _DEFAULT_BROWSER = None
 _DEFAULT_CAMERA_TRIGGER_ENABLED = False
 _DEFAULT_TRACKPAD_TRIGGER_ENABLED = False
-_DEFAULT_TRACKPAD_TOUCH_COUNT = 3
+_DEFAULT_TRACKPAD_GESTURE = "smart_zoom"
 _TRACKPAD_TRIGGER_KEY = "trackpad_tap_enabled"
-_TRACKPAD_TOUCH_COUNT_KEY = "trackpad_touch_count"
-TRACKPAD_TOUCH_COUNT_OPTIONS = (2, 3, 4)
+_TRACKPAD_GESTURE_KEY = "trackpad_gesture"
+TRACKPAD_GESTURE_LABELS = {
+    "smart_zoom": "Smart Zoom",
+    "pinch": "Pinch",
+    "rotate": "Rotate",
+    "swipe": "Swipe",
+    "look_up": "Look Up Tap",
+}
+TRACKPAD_GESTURE_OPTIONS = tuple(TRACKPAD_GESTURE_LABELS)
 
 
 def normalize_target_url(value: str) -> str:
@@ -134,27 +141,23 @@ def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
     _save_config_data(data)
 
 
-def load_trackpad_touch_count() -> int:
-    """Load the number of fingers required for the trackpad trigger."""
+def load_trackpad_gesture() -> str:
+    """Load the AppKit trackpad gesture used as a trigger."""
     data = _load_config_data()
-    return normalize_trackpad_touch_count(data.get(_TRACKPAD_TOUCH_COUNT_KEY))
+    return normalize_trackpad_gesture(data.get(_TRACKPAD_GESTURE_KEY))
 
 
-def save_trackpad_touch_count(touch_count: int):
-    """Persist the number of fingers required for the trackpad trigger."""
+def save_trackpad_gesture(gesture: str):
+    """Persist the AppKit trackpad gesture used as a trigger."""
     data = _load_config_data()
-    data[_TRACKPAD_TOUCH_COUNT_KEY] = normalize_trackpad_touch_count(touch_count)
+    data[_TRACKPAD_GESTURE_KEY] = normalize_trackpad_gesture(gesture)
     _save_config_data(data)
 
 
-def normalize_trackpad_touch_count(value) -> int:
-    try:
-        touch_count = int(value)
-    except (TypeError, ValueError):
-        return _DEFAULT_TRACKPAD_TOUCH_COUNT
-    if touch_count not in TRACKPAD_TOUCH_COUNT_OPTIONS:
-        return _DEFAULT_TRACKPAD_TOUCH_COUNT
-    return touch_count
+def normalize_trackpad_gesture(value) -> str:
+    if value in TRACKPAD_GESTURE_OPTIONS:
+        return value
+    return _DEFAULT_TRACKPAD_GESTURE
 
 
 # --- Detection Tuning ---
