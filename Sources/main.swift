@@ -434,21 +434,17 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     static let fingerCount = 3
     var onTap: (() -> Void)?
 
-    private enum State {
-        case idle
-        case possibleTap
-    }
-
-    private var state = State.idle
+    private var sawTargetFingerCount = false
     private var startTime = 0.0
     private var startCentroid: MTPoint?
     private var maxMovement: Float = 0
     private var lastTriggerTime = 0.0
     private var devices = [MTDeviceRef]()
 
-    private let tapDurationLimit = 0.35
-    private let movementLimit: Float = 0.08
+    private let tapDurationLimit = 0.45
+    private let movementLimit: Float = 0.14
     private let cooldown = 0.2
+    private let staleTouchClusterLimit = 1.0
 
     var isRunning: Bool {
         !devices.isEmpty
@@ -503,9 +499,6 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
             guard touch.state == 3 || touch.state == 4 else {
                 return nil
             }
-            if touch.total > 3.0 {
-                return nil
-            }
             return touch.normalizedVector.position
         }
 
@@ -513,36 +506,50 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
-        if points.count == Self.fingerCount {
-            let centroid = centroid(of: points)
-            switch state {
-            case .idle:
-                state = .possibleTap
-                startTime = timestamp
-                startCentroid = centroid
-                maxMovement = 0
-            case .possibleTap:
-                if let startCentroid {
-                    maxMovement = max(maxMovement, centroid.distance(to: startCentroid))
-                }
-            }
+        if points.isEmpty || (sawTargetFingerCount && points.count < Self.fingerCount) {
+            finishTouchCluster(timestamp: timestamp)
             return
         }
 
-        if points.isEmpty, state == .possibleTap {
-            let elapsed = timestamp - startTime
-            if elapsed <= tapDurationLimit,
-               maxMovement <= movementLimit,
-               timestamp - lastTriggerTime >= cooldown {
-                lastTriggerTime = timestamp
-                DispatchQueue.main.async { [weak self] in
-                    self?.onTap?()
-                }
-            }
+        if sawTargetFingerCount && timestamp - startTime > staleTouchClusterLimit {
+            reset()
         }
 
-        if points.count != Self.fingerCount {
+        guard points.count == Self.fingerCount else {
+            return
+        }
+
+        let centroid = centroid(of: points)
+        if !sawTargetFingerCount {
+            sawTargetFingerCount = true
+            startTime = timestamp
+            startCentroid = centroid
+            maxMovement = 0
+        } else if let startCentroid {
+            maxMovement = max(maxMovement, centroid.distance(to: startCentroid))
+        }
+    }
+
+    private func finishTouchCluster(timestamp: Double) {
+        defer {
             reset()
+        }
+
+        guard sawTargetFingerCount else {
+            return
+        }
+
+        let elapsed = timestamp - startTime
+        guard elapsed <= tapDurationLimit,
+              maxMovement <= movementLimit,
+              timestamp - lastTriggerTime >= cooldown
+        else {
+            return
+        }
+
+        lastTriggerTime = timestamp
+        DispatchQueue.main.async { [weak self] in
+            self?.onTap?()
         }
     }
 
@@ -555,7 +562,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     }
 
     private func reset() {
-        state = .idle
+        sawTargetFingerCount = false
         startTime = 0
         startCentroid = nil
         maxMovement = 0
