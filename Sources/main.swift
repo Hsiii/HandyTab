@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ServiceManagement
 
 // MARK: - Config
 
@@ -68,6 +69,130 @@ final class ConfigStore: @unchecked Sendable {
             return "https://\(trimmed)"
         }
         return trimmed
+    }
+}
+
+// MARK: - Launch at Login
+
+@MainActor
+final class LaunchAtLoginStore {
+    private(set) var opensAtLogin = false
+    private let swiftRunLoginItem = SwiftRunLoginItem()
+
+    init() {
+        refresh()
+    }
+
+    func refresh() {
+        opensAtLogin = Self.usesServiceManagement
+            ? Self.isServiceManagementEnabled
+            : swiftRunLoginItem.isEnabled
+    }
+
+    func setEnabled(_ enabled: Bool) -> String? {
+        do {
+            if Self.usesServiceManagement {
+                if enabled {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } else {
+                try swiftRunLoginItem.setEnabled(enabled)
+            }
+
+            opensAtLogin = enabled
+            return nil
+        } catch {
+            refresh()
+            return Self.message(for: enabled, error: error)
+        }
+    }
+
+    private static var usesServiceManagement: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
+    }
+
+    private static var isServiceManagementEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    private static func message(for enabled: Bool, error: Error) -> String {
+        let fallback: String
+        if usesServiceManagement {
+            fallback = enabled
+                ? "HandyTab could not be added to Login Items. Install the app in /Applications and try again."
+                : "HandyTab could not be removed from Login Items."
+        } else {
+            fallback = enabled
+                ? "HandyTab could not add its SwiftPM launch agent."
+                : "HandyTab could not remove its SwiftPM launch agent."
+        }
+
+        let details = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let genericFailure = details.lowercased().contains("operation")
+            && details.lowercased().contains("completed")
+        if details.isEmpty || genericFailure {
+            return fallback
+        }
+
+        return "\(fallback) \(details)"
+    }
+}
+
+final class SwiftRunLoginItem {
+    private let label = "dev.hsichen.handytab"
+    private let fileManager = FileManager.default
+
+    var isEnabled: Bool {
+        fileManager.fileExists(atPath: plistURL.path)
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        if enabled {
+            try writePlist()
+        } else if isEnabled {
+            try fileManager.removeItem(at: plistURL)
+        }
+    }
+
+    private var plistURL: URL {
+        fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents")
+            .appendingPathComponent("\(label).plist")
+    }
+
+    private var projectRootURL: URL {
+        var url = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+        while url.path != "/" {
+            if fileManager.fileExists(atPath: url.appendingPathComponent("Package.swift").path) {
+                return url
+            }
+            url.deleteLastPathComponent()
+        }
+        return URL(fileURLWithPath: fileManager.currentDirectoryPath)
+    }
+
+    private func writePlist() throws {
+        let root = projectRootURL
+        try fileManager.createDirectory(
+            at: plistURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [
+                "/usr/bin/swift",
+                "run",
+                "--package-path",
+                root.path,
+            ],
+            "RunAtLoad": true,
+            "WorkingDirectory": root.path,
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: plistURL, options: .atomic)
     }
 }
 
@@ -446,10 +571,12 @@ final class AppController: NSObject {
     private let targetOpener = TargetOpener()
     private let cameraWorker = PythonGestureWorker()
     private let trackpadRecognizer = TrackpadTapRecognizer()
+    private let launchAtLoginStore = LaunchAtLoginStore()
 
     private let trackpadStatusItem = NSMenuItem()
     private let cameraItem = NSMenuItem()
     private let targetItem = NSMenuItem()
+    private let launchAtLoginItem = NSMenuItem()
 
     func start() {
         configureStatusIcon()
@@ -529,6 +656,12 @@ final class AppController: NSObject {
 
         menu.addItem(.separator())
 
+        launchAtLoginItem.target = self
+        launchAtLoginItem.action = #selector(toggleOpenAtLogin)
+        menu.addItem(launchAtLoginItem)
+
+        menu.addItem(.separator())
+
         let quit = NSMenuItem(title: "Quit HandyTab", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -543,6 +676,9 @@ final class AppController: NSObject {
         targetItem.title = "Open: \(config.targetURL)"
         cameraItem.title = "Hand Wave Webcam"
         cameraItem.state = cameraWorker.isRunning ? .on : .off
+        launchAtLoginStore.refresh()
+        launchAtLoginItem.title = "Open at Login"
+        launchAtLoginItem.state = launchAtLoginStore.opensAtLogin ? .on : .off
     }
 
     @objc private func toggleHandWaveWebcam() {
@@ -565,6 +701,14 @@ final class AppController: NSObject {
             try? self?.config.setTargetURL(value)
             self?.refreshMenu()
         }
+    }
+
+    @objc private func toggleOpenAtLogin() {
+        let enabled = !launchAtLoginStore.opensAtLogin
+        if let message = launchAtLoginStore.setEnabled(enabled) {
+            showAlert(title: "Could Not Update Login Item", text: message)
+        }
+        refreshMenu()
     }
 
     @objc private func quit() {
@@ -634,6 +778,16 @@ final class AppController: NSObject {
         if alert.runModal() == .alertFirstButtonReturn {
             onSave(input.stringValue)
         }
+    }
+
+    private func showAlert(title: String, text: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: "OK")
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func showNotification(title: String, text: String) {

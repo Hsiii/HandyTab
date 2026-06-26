@@ -23,6 +23,7 @@ swift run
 2. Tap the trackpad with 3 fingers to open the target URL in your system default browser.
 3. Use **Open** in the menu to change the destination URL, persisted to `~/.handytab_config.json`.
 4. Toggle **Hand Wave Webcam** only if you want the optional camera gesture mode.
+5. Toggle **Open at Login** to start HandyTab when you sign in.
 
 The Swift runner uses Apple's private `MultitouchSupport.framework`, so it is intended for local/personal use rather than App Store distribution.
 
