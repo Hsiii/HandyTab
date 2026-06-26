@@ -482,17 +482,21 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     private var startCentroid: MTPoint?
     private var maxMovement: Float = 0
     private var lastTriggerTime = 0.0
+    private var rejectedTouchIDs = Set<Int32>()
     private var devices = [MTDeviceRef]()
 
     private let tapDurationLimit = 0.45
     private let movementLimit: Float = 0.14
     private let cooldown = 0.2
     private let staleTouchClusterLimit = 1.0
-    private let palmTotalLimit: Float = 7.0
-    private let palmMajorAxisLimit: Float = 0.28
-    private let palmMinorAxisLimit: Float = 0.20
+    private let palmTotalLimit: Float = 1.5
+    private let palmMajorAxisLimit: Float = 10.0
+    private let palmMinorAxisLimit: Float = 8.0
     private let palmEdgeMargin: Float = 0.03
-    private let palmEdgeTotalLimit: Float = 5.0
+    private let palmEdgeTotalLimit: Float = 0.9
+    private let typingPalmWindow = 2.0
+    private let typingSideMargin: Float = 0.30
+    private let typingTopMargin: Float = 0.20
 
     var isRunning: Bool {
         !devices.isEmpty
@@ -543,19 +547,37 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
             start: rawTouches.bindMemory(to: MTTouch.self, capacity: count),
             count: count
         )
+        syncRejectedTouchIDs(with: touches)
         let activePoints = touches.compactMap(fingerPoint)
 
         handle(points: activePoints, timestamp: timestamp)
     }
 
     private func fingerPoint(from touch: MTTouch) -> MTPoint? {
-        guard touch.state == 3 || touch.state == 4,
-              !isPalmLike(touch)
-        else {
+        guard isActiveTouch(touch) else {
+            return nil
+        }
+
+        if rejectedTouchIDs.contains(touch.identifier) || isPalmLike(touch) {
+            rejectedTouchIDs.insert(touch.identifier)
             return nil
         }
 
         return touch.normalizedVector.position
+    }
+
+    private func syncRejectedTouchIDs(with touches: UnsafeBufferPointer<MTTouch>) {
+        let activeTouchIDs = Set(touches.compactMap { touch -> Int32? in
+            guard isActiveTouch(touch) else {
+                return nil
+            }
+            return touch.identifier
+        })
+        rejectedTouchIDs.formIntersection(activeTouchIDs)
+    }
+
+    private func isActiveTouch(_ touch: MTTouch) -> Bool {
+        touch.state == 3 || touch.state == 4
     }
 
     private func isPalmLike(_ touch: MTTouch) -> Bool {
@@ -566,12 +588,26 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
         }
 
         let point = touch.normalizedVector.position
+        if hasRecentKeyboardInput && isTypingPalmZone(point) {
+            return true
+        }
+
         let isEdgeContact = point.x < palmEdgeMargin ||
             point.x > 1 - palmEdgeMargin ||
             point.y < palmEdgeMargin ||
             point.y > 1 - palmEdgeMargin
 
         return isEdgeContact && touch.total > palmEdgeTotalLimit
+    }
+
+    private var hasRecentKeyboardInput: Bool {
+        CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) < typingPalmWindow
+    }
+
+    private func isTypingPalmZone(_ point: MTPoint) -> Bool {
+        point.x < typingSideMargin ||
+            point.x > 1 - typingSideMargin ||
+            point.y > 1 - typingTopMargin
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
