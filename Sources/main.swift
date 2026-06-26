@@ -493,6 +493,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     private let cooldown = 0.2
     private let staleTouchClusterLimit = 1.0
     private let palmEdgeMargin: Float = 0.03
+    private let palmAssistedTapEdgeMargin: Float = 0.12
     private let palmEdgeTotalLimit: Float = 1.5
     private let palmEdgeMajorAxisLimit: Float = 10.0
     private let palmEdgeMinorAxisLimit: Float = 8.0
@@ -548,6 +549,10 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
         )
         syncRejectedTouchIDs(with: touches)
         let activePoints = touches.compactMap(fingerPoint)
+        if isPalmAssistedTap(points: activePoints) {
+            reset()
+            return
+        }
 
         handle(points: activePoints, timestamp: timestamp)
     }
@@ -593,6 +598,21 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
         return touch.total > palmEdgeTotalLimit ||
             touch.majorAxis > palmEdgeMajorAxisLimit ||
             touch.minorAxis > palmEdgeMinorAxisLimit
+    }
+
+    private func isPalmAssistedTap(points: [MTPoint]) -> Bool {
+        guard points.count == Self.fingerCount else {
+            return false
+        }
+
+        return points.contains(where: isInPalmAssistedTapEdge)
+    }
+
+    private func isInPalmAssistedTapEdge(_ point: MTPoint) -> Bool {
+        point.x < palmAssistedTapEdgeMargin ||
+            point.x > 1 - palmAssistedTapEdgeMargin ||
+            point.y < palmAssistedTapEdgeMargin ||
+            point.y > 1 - palmAssistedTapEdgeMargin
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
