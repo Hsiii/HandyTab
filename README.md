@@ -11,8 +11,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Download MediaPipe model
-mkdir -p models
-curl -o models/gesture_recognizer.task https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task
+curl -o gesture_recognizer.task https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task
 
 # Run the Swift menu bar shell.
 # This keeps MediaPipe in Python and uses raw multitouch frames for trackpad taps.

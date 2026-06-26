@@ -13,6 +13,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "HandyTab",
+            path: "Sources",
             linkerSettings: [
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks"]),
                 .linkedFramework("MultitouchSupport"),

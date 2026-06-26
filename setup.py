@@ -4,7 +4,7 @@ from setuptools import setup
 
 APP = ["handytab/__main__.py"]
 DATA_FILES = [
-    ("models", ["models/gesture_recognizer.task"]),
+    ("", ["gesture_recognizer.task"]),
     ("assets", ["assets/icon.png"]),
 ]
 OPTIONS = {

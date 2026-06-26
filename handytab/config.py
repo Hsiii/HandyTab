@@ -13,8 +13,8 @@ def _resource_path(relative_path: str) -> str:
 
     In a py2app bundle, this file lives at:
         HandyTab.app/Contents/Resources/lib/python3.12/handytab/config.py
-    And data_files (like models/) are placed at:
-        HandyTab.app/Contents/Resources/models/
+    And data_files are placed at:
+        HandyTab.app/Contents/Resources/
     So we walk up from __file__ looking for a Resources dir that contains
     our target file.
     """
@@ -36,7 +36,7 @@ def _resource_path(relative_path: str) -> str:
 
 
 # --- Model ---
-MODEL_PATH = _resource_path(os.path.join("models", "gesture_recognizer.task"))
+MODEL_PATH = _resource_path("gesture_recognizer.task")
 ICON_PATH = _resource_path(os.path.join("assets", "icon.png"))
 
 import json
