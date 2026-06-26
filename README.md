@@ -32,7 +32,7 @@ The Swift runner uses Apple's private `MultitouchSupport.framework`, so it is in
 The original Python/Rumps app is still available:
 
 ```bash
-python run_handytab.py
+python -m handytab
 ```
 
 Its webcam gesture path works, but custom trackpad taps should use the Swift runner.

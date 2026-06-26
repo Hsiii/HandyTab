@@ -2,7 +2,7 @@
 
 from setuptools import setup
 
-APP = ["run_handytab.py"]
+APP = ["handytab/__main__.py"]
 DATA_FILES = [
     ("models", ["models/gesture_recognizer.task"]),
     ("assets", ["assets/icon.png"]),
