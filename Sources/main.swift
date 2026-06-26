@@ -488,6 +488,11 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     private let movementLimit: Float = 0.14
     private let cooldown = 0.2
     private let staleTouchClusterLimit = 1.0
+    private let palmTotalLimit: Float = 7.0
+    private let palmMajorAxisLimit: Float = 0.28
+    private let palmMinorAxisLimit: Float = 0.20
+    private let palmEdgeMargin: Float = 0.03
+    private let palmEdgeTotalLimit: Float = 5.0
 
     var isRunning: Bool {
         !devices.isEmpty
@@ -538,14 +543,35 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
             start: rawTouches.bindMemory(to: MTTouch.self, capacity: count),
             count: count
         )
-        let activePoints = touches.compactMap { touch -> MTPoint? in
-            guard touch.state == 3 || touch.state == 4 else {
-                return nil
-            }
-            return touch.normalizedVector.position
-        }
+        let activePoints = touches.compactMap(fingerPoint)
 
         handle(points: activePoints, timestamp: timestamp)
+    }
+
+    private func fingerPoint(from touch: MTTouch) -> MTPoint? {
+        guard touch.state == 3 || touch.state == 4,
+              !isPalmLike(touch)
+        else {
+            return nil
+        }
+
+        return touch.normalizedVector.position
+    }
+
+    private func isPalmLike(_ touch: MTTouch) -> Bool {
+        if touch.total > palmTotalLimit ||
+            touch.majorAxis > palmMajorAxisLimit ||
+            touch.minorAxis > palmMinorAxisLimit {
+            return true
+        }
+
+        let point = touch.normalizedVector.position
+        let isEdgeContact = point.x < palmEdgeMargin ||
+            point.x > 1 - palmEdgeMargin ||
+            point.y < palmEdgeMargin ||
+            point.y > 1 - palmEdgeMargin
+
+        return isEdgeContact && touch.total > palmEdgeTotalLimit
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
