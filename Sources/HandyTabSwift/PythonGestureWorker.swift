@@ -23,6 +23,7 @@ final class PythonGestureWorker: @unchecked Sendable {
     private var process: Process?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
+    private var outputBuffer = ""
     private let decoder = JSONDecoder()
 
     var isRunning: Bool {
@@ -95,8 +96,14 @@ final class PythonGestureWorker: @unchecked Sendable {
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else {
             return
         }
-        for line in text.split(separator: "\n") {
-            guard let lineData = String(line).data(using: .utf8),
+        outputBuffer += text
+
+        while let newline = outputBuffer.firstIndex(of: "\n") {
+            let line = String(outputBuffer[..<newline])
+            outputBuffer.removeSubrange(...newline)
+
+            guard !line.isEmpty,
+                  let lineData = line.data(using: .utf8),
                   let event = try? decoder.decode(WorkerEvent.self, from: lineData)
             else {
                 continue
