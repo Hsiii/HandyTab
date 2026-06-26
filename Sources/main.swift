@@ -277,10 +277,8 @@ final class PythonGestureWorker: @unchecked Sendable {
             return
         }
 
-        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let pythonPath = root.appendingPathComponent("venv/bin/python3").path
-        let fallbackPythonPath = "/usr/bin/python3"
-        let executable = FileManager.default.fileExists(atPath: pythonPath) ? pythonPath : fallbackPythonPath
+        let root = workerRootURL()
+        let executable = pythonExecutablePath(workerRootURL: root)
 
         let process = Process()
         let stdout = Pipe()
@@ -293,10 +291,7 @@ final class PythonGestureWorker: @unchecked Sendable {
             "--target-gesture",
             ConfigStore.handWaveGesture,
         ]
-        process.environment = ProcessInfo.processInfo.environment.merging(
-            ["PYTHONUNBUFFERED": "1"],
-            uniquingKeysWith: { _, new in new }
-        )
+        process.environment = workerEnvironment(workerRootURL: root)
         process.standardOutput = stdout
         process.standardError = standardErrorPipe
 
@@ -361,6 +356,54 @@ final class PythonGestureWorker: @unchecked Sendable {
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe = nil
         stderrPipe = nil
+    }
+
+    private func workerRootURL() -> URL {
+        let fileManager = FileManager.default
+        let currentDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+        let candidates = [
+            Bundle.main.resourceURL,
+            currentDirectory,
+        ].compactMap { $0 }
+
+        for candidate in candidates {
+            if fileManager.fileExists(atPath: candidate.appendingPathComponent("handytab").path),
+               fileManager.fileExists(atPath: candidate.appendingPathComponent("gesture_recognizer.task").path) {
+                return candidate
+            }
+        }
+
+        return currentDirectory
+    }
+
+    private func pythonExecutablePath(workerRootURL: URL) -> String {
+        let fileManager = FileManager.default
+        let candidates = [
+            workerRootURL.appendingPathComponent("venv/bin/python3").path,
+            URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent("venv/bin/python3").path,
+            "/opt/homebrew/opt/python@3.12/bin/python3.12",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ]
+
+        return candidates.first { fileManager.fileExists(atPath: $0) } ?? "/usr/bin/python3"
+    }
+
+    private func workerEnvironment(workerRootURL: URL) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let bundledPythonPackages = workerRootURL.appendingPathComponent("python").path
+        let pythonPathRoots = [bundledPythonPackages, workerRootURL.path]
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .joined(separator: ":")
+        let existingPythonPath = environment["PYTHONPATH"]
+        if let existingPythonPath, !existingPythonPath.isEmpty {
+            environment["PYTHONPATH"] = "\(pythonPathRoots):\(existingPythonPath)"
+        } else {
+            environment["PYTHONPATH"] = pythonPathRoots
+        }
+        environment["PYTHONUNBUFFERED"] = "1"
+        return environment
     }
 }
 

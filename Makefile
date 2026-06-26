@@ -1,4 +1,4 @@
-.PHONY: all build run clean
+.PHONY: all build run dmg clean
 
 all: build
 
@@ -7,6 +7,9 @@ build:
 
 run:
 	swift run
+
+dmg:
+	./scripts/dmg.sh
 
 clean:
 	rm -rf .build build dist

@@ -34,3 +34,11 @@ Build the Swift app:
 ```bash
 make build
 ```
+
+Build a DMG:
+
+```bash
+./scripts/dmg.sh
+```
+
+The DMG script builds a signed `HandyTab.app`, stages it with an Applications shortcut, and bundles the MediaPipe model plus `venv` site-packages when available.
