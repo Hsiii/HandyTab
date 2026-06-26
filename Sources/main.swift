@@ -480,13 +480,16 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     private var sawTargetFingerCount = false
     private var startTime = 0.0
     private var startCentroid: MTPoint?
+    private var previousCentroid: MTPoint?
     private var maxMovement: Float = 0
+    private var maxFrameMovement: Float = 0
     private var lastTriggerTime = 0.0
     private var rejectedTouchIDs = Set<Int32>()
     private var devices = [MTDeviceRef]()
 
     private let tapDurationLimit = 0.45
-    private let movementLimit: Float = 0.14
+    private let movementLimit: Float = 0.06
+    private let frameMovementLimit: Float = 0.025
     private let cooldown = 0.2
     private let staleTouchClusterLimit = 1.0
     private let palmEdgeMargin: Float = 0.03
@@ -611,9 +614,17 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
             sawTargetFingerCount = true
             startTime = timestamp
             startCentroid = centroid
+            previousCentroid = centroid
             maxMovement = 0
-        } else if let startCentroid {
-            maxMovement = max(maxMovement, centroid.distance(to: startCentroid))
+            maxFrameMovement = 0
+        } else {
+            if let startCentroid {
+                maxMovement = max(maxMovement, centroid.distance(to: startCentroid))
+            }
+            if let previousCentroid {
+                maxFrameMovement = max(maxFrameMovement, centroid.distance(to: previousCentroid))
+            }
+            previousCentroid = centroid
         }
     }
 
@@ -629,6 +640,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
         let elapsed = timestamp - startTime
         guard elapsed <= tapDurationLimit,
               maxMovement <= movementLimit,
+              maxFrameMovement <= frameMovementLimit,
               timestamp - lastTriggerTime >= cooldown
         else {
             return
@@ -652,7 +664,9 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
         sawTargetFingerCount = false
         startTime = 0
         startCentroid = nil
+        previousCentroid = nil
         maxMovement = 0
+        maxFrameMovement = 0
     }
 }
 
