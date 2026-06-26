@@ -1,6 +1,8 @@
 venv/
 build/
 dist/
+.build/
+.swiftpm/
 .DS_Store
 __pycache__/
 *.pyc
