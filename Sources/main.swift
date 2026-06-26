@@ -200,7 +200,7 @@ final class SwiftRunLoginItem {
 
 final class TargetOpener {
     private var lastOpenTime: TimeInterval = 0
-    private let cooldown: TimeInterval = 0.7
+    private let cooldown: TimeInterval = 0.2
 
     func openTargetURL() {
         let now = Date().timeIntervalSince1970
@@ -448,7 +448,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
 
     private let tapDurationLimit = 0.35
     private let movementLimit: Float = 0.08
-    private let cooldown = 0.7
+    private let cooldown = 0.2
 
     var isRunning: Bool {
         !devices.isEmpty
