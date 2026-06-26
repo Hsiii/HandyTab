@@ -489,14 +489,10 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     private let movementLimit: Float = 0.14
     private let cooldown = 0.2
     private let staleTouchClusterLimit = 1.0
-    private let palmTotalLimit: Float = 1.5
-    private let palmMajorAxisLimit: Float = 10.0
-    private let palmMinorAxisLimit: Float = 8.0
     private let palmEdgeMargin: Float = 0.03
-    private let palmEdgeTotalLimit: Float = 0.9
-    private let typingPalmWindow = 2.0
-    private let typingSideMargin: Float = 0.30
-    private let typingTopMargin: Float = 0.20
+    private let palmEdgeTotalLimit: Float = 1.5
+    private let palmEdgeMajorAxisLimit: Float = 10.0
+    private let palmEdgeMinorAxisLimit: Float = 8.0
 
     var isRunning: Bool {
         !devices.isEmpty
@@ -581,33 +577,19 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     }
 
     private func isPalmLike(_ touch: MTTouch) -> Bool {
-        if touch.total > palmTotalLimit ||
-            touch.majorAxis > palmMajorAxisLimit ||
-            touch.minorAxis > palmMinorAxisLimit {
-            return true
-        }
-
         let point = touch.normalizedVector.position
-        if hasRecentKeyboardInput && isTypingPalmZone(point) {
-            return true
-        }
-
         let isEdgeContact = point.x < palmEdgeMargin ||
             point.x > 1 - palmEdgeMargin ||
             point.y < palmEdgeMargin ||
             point.y > 1 - palmEdgeMargin
 
-        return isEdgeContact && touch.total > palmEdgeTotalLimit
-    }
+        guard isEdgeContact else {
+            return false
+        }
 
-    private var hasRecentKeyboardInput: Bool {
-        CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) < typingPalmWindow
-    }
-
-    private func isTypingPalmZone(_ point: MTPoint) -> Bool {
-        point.x < typingSideMargin ||
-            point.x > 1 - typingSideMargin ||
-            point.y > 1 - typingTopMargin
+        return touch.total > palmEdgeTotalLimit ||
+            touch.majorAxis > palmEdgeMajorAxisLimit ||
+            touch.minorAxis > palmEdgeMinorAxisLimit
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
