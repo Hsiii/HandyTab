@@ -1,163 +1,28 @@
-"""Configuration constants for HandyTab."""
+"""Configuration constants for HandyTab's MediaPipe worker."""
 
 import os
 import sys
 
 # --- Paths ---
-# When bundled with py2app, resources are in the app bundle's Resources dir.
-# When running from source, they're relative to the project root.
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def _resource_path(relative_path: str) -> str:
-    """Resolve path to a resource, works both in dev and bundled .app.
 
-    In a py2app bundle, this file lives at:
-        HandyTab.app/Contents/Resources/lib/python3.12/handytab/config.py
-    And data_files are placed at:
-        HandyTab.app/Contents/Resources/
-    So we walk up from __file__ looking for a Resources dir that contains
-    our target file.
-    """
-    # PyInstaller fallback
-    if hasattr(sys, '_MEIPASS'):
+def _resource_path(relative_path: str) -> str:
+    """Resolve a worker resource from Swift's project-root cwd or package root."""
+    if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
 
-    # py2app: walk up from this file's directory looking for Resources/
-    current = os.path.dirname(os.path.abspath(__file__))
-    for _ in range(6):  # Walk up at most 6 levels
-        candidate = os.path.join(current, relative_path)
+    for root in (os.getcwd(), _BASE_DIR):
+        candidate = os.path.join(root, relative_path)
         if os.path.exists(candidate):
             return candidate
-        current = os.path.dirname(current)
 
-    # Dev mode: relative to project root
     return os.path.join(_BASE_DIR, relative_path)
-
 
 
 # --- Model ---
 MODEL_PATH = _resource_path("gesture_recognizer.task")
-ICON_PATH = _resource_path(os.path.join("assets", "icon.png"))
-
-import json
-from urllib.parse import urlparse
-
-# --- Target Action ---
-_CONFIG_FILE = os.path.expanduser("~/.handytab_config.json")
-
-_DEFAULT_GESTURE = "Open_Palm"
-_DEFAULT_URL = "https://hsichen.dev"
-_DEFAULT_BROWSER = None
-_DEFAULT_CAMERA_TRIGGER_ENABLED = False
-_DEFAULT_TRACKPAD_TRIGGER_ENABLED = False
-_DEFAULT_TRACKPAD_GESTURE = "smart_zoom"
-_TRACKPAD_TRIGGER_KEY = "trackpad_tap_enabled"
-_TRACKPAD_GESTURE_KEY = "trackpad_gesture"
-TRACKPAD_GESTURE_LABELS = {
-    "smart_zoom": "Smart Zoom",
-    "pinch": "Pinch",
-    "rotate": "Rotate",
-    "swipe": "Swipe",
-    "look_up": "Look Up Tap",
-}
-TRACKPAD_GESTURE_OPTIONS = tuple(TRACKPAD_GESTURE_LABELS)
-
-
-def normalize_target_url(value: str) -> str:
-    """Normalize user URL input and reject malformed values."""
-    url = value.strip()
-    if not url:
-        raise ValueError("URL cannot be empty")
-
-    parsed = urlparse(url)
-    if not parsed.scheme:
-        url = f"https://{url}"
-        parsed = urlparse(url)
-
-    hostname = parsed.hostname or ""
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("URL must start with http:// or https://")
-    if not parsed.netloc or ("." not in hostname and hostname != "localhost"):
-        raise ValueError("Enter a valid URL, such as https://example.com")
-
-    return url
-
-
-def load_target() -> tuple[str, str, str | None]:
-    """Load the active target from disk, falling back to defaults."""
-    try:
-        data = _load_config_data()
-        return (
-            data.get("gesture", _DEFAULT_GESTURE),
-            normalize_target_url(data.get("target_url", _DEFAULT_URL)),
-            data.get("browser") or None,
-        )
-    except Exception:
-        pass
-    return _DEFAULT_GESTURE, _DEFAULT_URL, _DEFAULT_BROWSER
-
-
-def save_target(gesture: str, url: str, browser: str | None):
-    """Persist the active target to disk."""
-    data = _load_config_data()
-    data["gesture"] = gesture
-    data["target_url"] = normalize_target_url(url)
-    data["browser"] = browser
-    _save_config_data(data)
-
-
-def _load_config_data() -> dict:
-    if os.path.exists(_CONFIG_FILE):
-        try:
-            with open(_CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-
-def _save_config_data(data: dict):
-    try:
-        with open(_CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception:
-        pass
-
-
-def load_trigger_settings() -> tuple[bool, bool]:
-    """Load whether camera and trackpad triggers are enabled."""
-    data = _load_config_data()
-    return (
-        bool(data.get("camera_trigger_enabled", _DEFAULT_CAMERA_TRIGGER_ENABLED)),
-        bool(data.get(_TRACKPAD_TRIGGER_KEY, _DEFAULT_TRACKPAD_TRIGGER_ENABLED)),
-    )
-
-
-def save_trigger_settings(camera_enabled: bool, trackpad_enabled: bool):
-    """Persist enabled trigger sources."""
-    data = _load_config_data()
-    data["camera_trigger_enabled"] = camera_enabled
-    data[_TRACKPAD_TRIGGER_KEY] = trackpad_enabled
-    _save_config_data(data)
-
-
-def load_trackpad_gesture() -> str:
-    """Load the AppKit trackpad gesture used as a trigger."""
-    data = _load_config_data()
-    return normalize_trackpad_gesture(data.get(_TRACKPAD_GESTURE_KEY))
-
-
-def save_trackpad_gesture(gesture: str):
-    """Persist the AppKit trackpad gesture used as a trigger."""
-    data = _load_config_data()
-    data[_TRACKPAD_GESTURE_KEY] = normalize_trackpad_gesture(gesture)
-    _save_config_data(data)
-
-
-def normalize_trackpad_gesture(value) -> str:
-    if value in TRACKPAD_GESTURE_OPTIONS:
-        return value
-    return _DEFAULT_TRACKPAD_GESTURE
+DEFAULT_TARGET_GESTURE = "Open_Palm"
 
 
 # --- Detection Tuning ---

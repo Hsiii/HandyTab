@@ -6,5 +6,5 @@
 - **Logical Grouping**: Group related changes into single commits with descriptive messages.
 
 ## Build Process
-- **Makefile**: Use `make build` to rebuild the application bundle and DMG installer after any changes to code or assets.
+- **Makefile**: Use `make build` after any changes to code or assets.
 - **Asset Integrity**: Ensure `AppIcon.icns` is kept in sync with `icon.png` if branding changes.

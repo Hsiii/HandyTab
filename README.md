@@ -1,6 +1,6 @@
 # HandyTab
 
-A macOS menu bar app that opens a target URL from a webcam hand gesture or a custom trackpad tap.
+A macOS menu bar app that opens a target URL from a 3-finger trackpad tap. It also includes an optional Hand Wave Webcam mode for fun.
 
 ## Quickstart
 
@@ -13,43 +13,23 @@ pip install -r requirements.txt
 # Download MediaPipe model
 curl -o gesture_recognizer.task https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task
 
-# Run the Swift menu bar shell.
-# This keeps MediaPipe in Python and uses raw multitouch frames for trackpad taps.
+# Run the Swift menu bar app.
+# Trackpad taps are handled in Swift; MediaPipe stays in Python for the webcam extra.
 swift run
 ```
 
 ## Usage
-1. Click the app icon in the menu bar and toggle **Camera Gesture** or **Trackpad Gesture**.
-2. Wave your hand at the camera, or tap the trackpad with the configured finger count, to open the target tab.
-3. Use **Trackpad Fingers** to cycle between 2-, 3-, 4-, and 5-finger tap triggers.
-4. Use **Target** to change the destination URL (persisted to `~/.handytab_config.json`).
+1. Run `swift run`.
+2. Tap the trackpad with 3 fingers to open the target URL in your system default browser.
+3. Use **Open** in the menu to change the destination URL, persisted to `~/.handytab_config.json`.
+4. Toggle **Hand Wave Webcam** only if you want the optional camera gesture mode.
 
 The Swift runner uses Apple's private `MultitouchSupport.framework`, so it is intended for local/personal use rather than App Store distribution.
 
-## Legacy Python App
-
-The original Python/Rumps app is still available:
-
-```bash
-python -m handytab
-```
-
-Its webcam gesture path works, but custom trackpad taps should use the Swift runner.
-
 ## Build
 
-Build the Swift runner:
-
-```bash
-swift build
-```
-
-To build the macOS application bundle and the DMG installer, simply run:
+Build the Swift app:
 
 ```bash
 make build
 ```
-
-The resulting assets will be located in the `dist/` directory:
-- `dist/HandyTab.app`: The macOS application bundle.
-- `dist/HandyTab.dmg`: The disk image installer.

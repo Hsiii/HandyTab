@@ -1,3 +1,2 @@
 mediapipe>=0.10.14
 opencv-python-headless>=4.9
-rumps>=0.4.0

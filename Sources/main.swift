@@ -5,6 +5,7 @@ import Foundation
 
 final class ConfigStore: @unchecked Sendable {
     static let shared = ConfigStore()
+    static let handWaveGesture = "Open_Palm"
 
     private let configURL: URL
     private let fileManager = FileManager.default
@@ -14,57 +15,20 @@ final class ConfigStore: @unchecked Sendable {
         configURL = home.appendingPathComponent(".handytab_config.json")
     }
 
-    var targetGesture: String {
-        string(for: "gesture") ?? "Open_Palm"
-    }
-
     var targetURL: String {
         normalizeURL(string(for: "target_url") ?? "https://hsichen.dev")
     }
 
-    var browser: String? {
-        guard let value = string(for: "browser")?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty
-        else {
-            return nil
-        }
-        return value
+    var handWaveWebcamEnabled: Bool {
+        bool(for: "hand_wave_webcam_enabled", defaultValue: false)
     }
-
-    var cameraEnabled: Bool {
-        bool(for: "camera_trigger_enabled", defaultValue: false)
-    }
-
-    var trackpadEnabled: Bool {
-        bool(for: "trackpad_tap_enabled", defaultValue: false)
-    }
-
-    var trackpadFingerCount: Int {
-        let value = int(for: "trackpad_touch_count", defaultValue: 3)
-        return Self.trackpadFingerOptions.contains(value) ? value : 3
-    }
-
-    static let trackpadFingerOptions = [2, 3, 4, 5]
 
     func setTargetURL(_ value: String) throws {
         try set("target_url", value: normalizeURL(value))
     }
 
-    func setBrowser(_ value: String?) throws {
-        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        try set("browser", value: normalized?.isEmpty == false ? normalized : nil)
-    }
-
-    func setCameraEnabled(_ value: Bool) throws {
-        try set("camera_trigger_enabled", value: value)
-    }
-
-    func setTrackpadEnabled(_ value: Bool) throws {
-        try set("trackpad_tap_enabled", value: value)
-    }
-
-    func setTrackpadFingerCount(_ value: Int) throws {
-        try set("trackpad_touch_count", value: Self.trackpadFingerOptions.contains(value) ? value : 3)
+    func setHandWaveWebcamEnabled(_ value: Bool) throws {
+        try set("hand_wave_webcam_enabled", value: value)
     }
 
     private func string(for key: String) -> String? {
@@ -73,16 +37,6 @@ final class ConfigStore: @unchecked Sendable {
 
     private func bool(for key: String, defaultValue: Bool) -> Bool {
         loadRaw()[key] as? Bool ?? defaultValue
-    }
-
-    private func int(for key: String, defaultValue: Int) -> Int {
-        if let value = loadRaw()[key] as? Int {
-            return value
-        }
-        if let value = loadRaw()[key] as? Double {
-            return Int(value)
-        }
-        return defaultValue
     }
 
     private func set(_ key: String, value: Any?) throws {
@@ -117,11 +71,10 @@ final class ConfigStore: @unchecked Sendable {
     }
 }
 
-// MARK: - Browser Actions
+// MARK: - Target Opening
 
-final class BrowserActions {
+final class TargetOpener {
     private var lastOpenTime: TimeInterval = 0
-    private var lastCloseTime: TimeInterval = 0
     private let cooldown: TimeInterval = 0.7
 
     func openTargetURL() {
@@ -131,72 +84,8 @@ final class BrowserActions {
         }
 
         let config = ConfigStore.shared
-        var arguments = [String]()
-        if let browser = config.browser {
-            arguments += ["-a", browser]
-        }
-        arguments.append(config.targetURL)
-
-        _ = runProcess("/usr/bin/open", arguments: arguments, timeout: 1)
+        _ = runProcess("/usr/bin/open", arguments: [config.targetURL], timeout: 1)
         lastOpenTime = now
-    }
-
-    func closeCurrentTab() {
-        let now = Date().timeIntervalSince1970
-        guard now - lastCloseTime >= cooldown else {
-            return
-        }
-
-        let browser = ConfigStore.shared.browser ?? frontmostAppName()
-        guard let script = closeTabScript(for: browser) else {
-            return
-        }
-        _ = runProcess("/usr/bin/osascript", arguments: ["-e", script], timeout: 3)
-        lastCloseTime = now
-    }
-
-    private func frontmostAppName() -> String? {
-        let script = "tell application \"System Events\" to get name of first application process whose frontmost is true"
-        return runProcess("/usr/bin/osascript", arguments: ["-e", script], timeout: 3)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func closeTabScript(for browser: String?) -> String? {
-        guard let browser else {
-            return nil
-        }
-
-        let escaped = browser.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let key = browser.lowercased()
-
-        if key == "safari" {
-            return """
-            tell application "\(escaped)"
-            if exists front window then close current tab of front window
-            end tell
-            """
-        }
-
-        let chromiumBrowsers: Set<String> = [
-            "arc",
-            "brave browser",
-            "chromium",
-            "dia",
-            "google chrome",
-            "microsoft edge",
-            "opera",
-            "vivaldi",
-        ]
-        if chromiumBrowsers.contains(key) {
-            return """
-            tell application "\(escaped)"
-            if exists front window then close active tab of front window
-            end tell
-            """
-        }
-
-        return nil
     }
 
     @discardableResult
@@ -258,7 +147,7 @@ final class PythonGestureWorker: @unchecked Sendable {
         process?.isRunning == true
     }
 
-    func start(targetGesture: String) throws {
+    func start() throws {
         if isRunning {
             return
         }
@@ -277,7 +166,7 @@ final class PythonGestureWorker: @unchecked Sendable {
             "-m",
             "handytab.gesture_worker",
             "--target-gesture",
-            targetGesture,
+            ConfigStore.handWaveGesture,
         ]
         process.environment = ProcessInfo.processInfo.environment.merging(
             ["PYTHONUNBUFFERED": "1"],
@@ -417,7 +306,7 @@ nonisolated(unsafe) private let contactFrameCallback: MTContactCallbackFunction 
 }
 
 final class TrackpadTapRecognizer: @unchecked Sendable {
-    var fingerCount = 3
+    static let fingerCount = 3
     var onTap: (() -> Void)?
 
     private enum State {
@@ -499,7 +388,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     }
 
     private func handle(points: [MTPoint], timestamp: Double) {
-        if points.count == fingerCount {
+        if points.count == Self.fingerCount {
             let centroid = centroid(of: points)
             switch state {
             case .idle:
@@ -527,7 +416,7 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
             }
         }
 
-        if points.count != fingerCount {
+        if points.count != Self.fingerCount {
             reset()
         }
     }
@@ -552,20 +441,18 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
 
 @MainActor
 final class AppController: NSObject {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let config = ConfigStore.shared
-    private let browserActions = BrowserActions()
+    private let targetOpener = TargetOpener()
     private let cameraWorker = PythonGestureWorker()
     private let trackpadRecognizer = TrackpadTapRecognizer()
 
+    private let trackpadStatusItem = NSMenuItem()
     private let cameraItem = NSMenuItem()
-    private let trackpadItem = NSMenuItem()
-    private let trackpadFingersItem = NSMenuItem()
     private let targetItem = NSMenuItem()
-    private let browserItem = NSMenuItem()
 
     func start() {
-        statusItem.button?.title = "HT"
+        configureStatusIcon()
         statusItem.menu = buildMenu()
 
         cameraWorker.onEvent = { [weak self] event in
@@ -575,14 +462,12 @@ final class AppController: NSObject {
             self?.refreshMenu()
         }
         trackpadRecognizer.onTap = { [weak self] in
-            self?.handleTrigger(source: "trackpad", name: "Trackpad_\(self?.trackpadRecognizer.fingerCount ?? 0)_Finger_Tap")
+            self?.handleTrigger(source: "trackpad")
         }
 
         refreshMenu()
-        if config.trackpadEnabled {
-            startTrackpad()
-        }
-        if config.cameraEnabled {
+        startTrackpad()
+        if config.handWaveWebcamEnabled {
             startCamera()
         }
     }
@@ -592,30 +477,55 @@ final class AppController: NSObject {
         trackpadRecognizer.stop()
     }
 
+    private func configureStatusIcon() {
+        guard let button = statusItem.button else {
+            return
+        }
+
+        button.title = ""
+        button.imagePosition = .imageOnly
+
+        guard let image = statusIconImage() else {
+            button.title = "HT"
+            return
+        }
+
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = false
+        button.image = image
+    }
+
+    private func statusIconImage() -> NSImage? {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let candidates = [
+            root.appendingPathComponent("assets/icon.png"),
+            Bundle.main.resourceURL?.appendingPathComponent("icon.png"),
+            Bundle.main.resourceURL?.appendingPathComponent("assets/icon.png"),
+        ].compactMap { $0 }
+
+        for url in candidates {
+            if let image = NSImage(contentsOf: url) {
+                return image
+            }
+        }
+        return nil
+    }
+
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        cameraItem.target = self
-        cameraItem.action = #selector(toggleCamera)
-        menu.addItem(cameraItem)
-
-        trackpadItem.target = self
-        trackpadItem.action = #selector(toggleTrackpad)
-        menu.addItem(trackpadItem)
-
-        trackpadFingersItem.target = self
-        trackpadFingersItem.action = #selector(cycleTrackpadFingers)
-        menu.addItem(trackpadFingersItem)
-
-        menu.addItem(.separator())
+        trackpadStatusItem.isEnabled = false
+        menu.addItem(trackpadStatusItem)
 
         targetItem.target = self
         targetItem.action = #selector(editTarget)
         menu.addItem(targetItem)
 
-        browserItem.target = self
-        browserItem.action = #selector(editBrowser)
-        menu.addItem(browserItem)
+        menu.addItem(.separator())
+
+        cameraItem.target = self
+        cameraItem.action = #selector(toggleHandWaveWebcam)
+        menu.addItem(cameraItem)
 
         menu.addItem(.separator())
 
@@ -627,63 +537,32 @@ final class AppController: NSObject {
     }
 
     private func refreshMenu() {
-        cameraItem.title = "Camera Gesture: \(cameraWorker.isRunning ? "On" : "Off")"
-        trackpadItem.title = "Trackpad Tap: \(trackpadRecognizer.isRunning ? "On" : "Off")"
-        trackpadFingersItem.title = "Trackpad Fingers: \(config.trackpadFingerCount)"
-        targetItem.title = "Target: \(config.targetURL)"
-        browserItem.title = "Browser: \(config.browser ?? "System Default")"
+        trackpadStatusItem.title = trackpadRecognizer.isRunning
+            ? "3-Finger Trackpad Tap: Always On"
+            : "3-Finger Trackpad Tap: Not Available"
+        targetItem.title = "Open: \(config.targetURL)"
+        cameraItem.title = "Hand Wave Webcam"
+        cameraItem.state = cameraWorker.isRunning ? .on : .off
     }
 
-    @objc private func toggleCamera() {
+    @objc private func toggleHandWaveWebcam() {
         if cameraWorker.isRunning {
             cameraWorker.stop()
-            try? config.setCameraEnabled(false)
+            try? config.setHandWaveWebcamEnabled(false)
         } else {
-            try? config.setCameraEnabled(true)
+            try? config.setHandWaveWebcamEnabled(true)
             startCamera()
         }
-        refreshMenu()
-    }
-
-    @objc private func toggleTrackpad() {
-        if trackpadRecognizer.isRunning {
-            trackpadRecognizer.stop()
-            try? config.setTrackpadEnabled(false)
-        } else {
-            try? config.setTrackpadEnabled(true)
-            startTrackpad()
-        }
-        refreshMenu()
-    }
-
-    @objc private func cycleTrackpadFingers() {
-        let options = ConfigStore.trackpadFingerOptions
-        let current = config.trackpadFingerCount
-        let index = options.firstIndex(of: current) ?? -1
-        let next = options[(index + 1) % options.count]
-        try? config.setTrackpadFingerCount(next)
-        trackpadRecognizer.fingerCount = next
         refreshMenu()
     }
 
     @objc private func editTarget() {
         prompt(
             title: "Edit Target URL",
-            message: "Enter the URL to open when a gesture is detected:",
+            message: "Enter the URL to open from the 3-finger trackpad tap:",
             defaultValue: config.targetURL
         ) { [weak self] value in
             try? self?.config.setTargetURL(value)
-            self?.refreshMenu()
-        }
-    }
-
-    @objc private func editBrowser() {
-        prompt(
-            title: "Set Browser",
-            message: "Enter a browser app name, or leave empty for the system default:",
-            defaultValue: config.browser ?? ""
-        ) { [weak self] value in
-            try? self?.config.setBrowser(value)
             self?.refreshMenu()
         }
     }
@@ -695,51 +574,44 @@ final class AppController: NSObject {
 
     private func startCamera() {
         do {
-            try cameraWorker.start(targetGesture: config.targetGesture)
+            try cameraWorker.start()
         } catch {
-            try? config.setCameraEnabled(false)
-            showNotification(title: "HandyTab", text: "Camera worker failed: \(error.localizedDescription)")
+            try? config.setHandWaveWebcamEnabled(false)
+            showNotification(title: "HandyTab", text: "Hand Wave Webcam failed: \(error.localizedDescription)")
         }
     }
 
     private func startTrackpad() {
-        trackpadRecognizer.fingerCount = config.trackpadFingerCount
         if !trackpadRecognizer.start() {
-            try? config.setTrackpadEnabled(false)
             showNotification(title: "HandyTab", text: "No multitouch trackpad was found.")
         }
+        refreshMenu()
     }
 
     private func handleWorkerEvent(_ event: WorkerEvent) {
         switch event.type {
         case "observation":
-            if let gesture = event.gesture, let confidence = event.confidence {
-                statusItem.button?.title = "\(gesture.replacingOccurrences(of: "_", with: " ")) \(Int(confidence * 100))%"
-            }
+            break
         case "trigger":
-            handleTrigger(source: "camera", name: event.gesture ?? "")
+            handleTrigger(source: "camera")
         case "error":
             cameraWorker.stop()
-            try? config.setCameraEnabled(false)
-            showNotification(title: "HandyTab", text: event.message ?? "Camera detection stopped.")
+            try? config.setHandWaveWebcamEnabled(false)
+            showNotification(title: "HandyTab", text: event.message ?? "Hand Wave Webcam stopped.")
         default:
             break
         }
         refreshMenu()
     }
 
-    private func handleTrigger(source: String, name: String) {
+    private func handleTrigger(source: String) {
         guard source != "camera" || cameraWorker.isRunning else {
             return
         }
         guard source != "trackpad" || trackpadRecognizer.isRunning else {
             return
         }
-        if name == "Thumb_Down" {
-            browserActions.closeCurrentTab()
-        } else {
-            browserActions.openTargetURL()
-        }
+        targetOpener.openTargetURL()
     }
 
     private func prompt(

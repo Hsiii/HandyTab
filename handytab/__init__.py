@@ -1,1 +1,1 @@
-"""HandyTab — Gesture-driven browser launcher for macOS."""
+"""HandyTab MediaPipe worker package."""

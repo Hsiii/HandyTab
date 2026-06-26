@@ -28,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target-gesture",
         default=None,
-        help="MediaPipe gesture name to trigger on. Defaults to saved config.",
+        help="MediaPipe gesture name to trigger on. Defaults to Open_Palm.",
     )
     return parser
 
@@ -41,8 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         format="[%(levelname)s] %(name)s: %(message)s",
     )
 
-    saved_gesture, _url, _browser = config.load_target()
-    target_gesture = args.target_gesture or saved_gesture
+    target_gesture = args.target_gesture or config.DEFAULT_TARGET_GESTURE
     stopped = threading.Event()
 
     def stop(_signum=None, _frame=None):

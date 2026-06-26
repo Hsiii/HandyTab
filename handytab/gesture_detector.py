@@ -280,7 +280,7 @@ class GestureDetector:
                          frame_count, timestamp_ms, gesture_name, confidence)
 
             candidate = (
-                gesture_name in {self.target_gesture, "Thumb_Down"}
+                gesture_name == self.target_gesture
                 and confidence >= config.RELEASE_CONFIDENCE_THRESHOLD
                 and quality_ok
             )
