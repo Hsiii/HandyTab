@@ -16,7 +16,7 @@ curl -o models/gesture_recognizer.task https://storage.googleapis.com/mediapipe-
 
 # Run the Swift menu bar shell.
 # This keeps MediaPipe in Python and uses raw multitouch frames for trackpad taps.
-swift run HandyTabSwift
+swift run
 ```
 
 ## Usage

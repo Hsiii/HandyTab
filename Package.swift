@@ -3,16 +3,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "HandyTabSwift",
+    name: "HandyTab",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "HandyTabSwift", targets: ["HandyTabSwift"])
+        .executable(name: "HandyTab", targets: ["HandyTab"])
     ],
     targets: [
         .executableTarget(
-            name: "HandyTabSwift",
+            name: "HandyTab",
             linkerSettings: [
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks"]),
                 .linkedFramework("MultitouchSupport"),
