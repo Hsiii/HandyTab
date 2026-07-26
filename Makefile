@@ -1,4 +1,4 @@
-.PHONY: all build run dmg clean
+.PHONY: all build run dmg brew tap clean
 
 all: build
 
@@ -10,6 +10,12 @@ run:
 
 dmg:
 	./scripts/dmg.sh
+
+brew:
+	./scripts/brew.sh $(ARGS)
+
+tap:
+	./scripts/tap.sh $(ARGS)
 
 clean:
 	rm -rf .build build dist
