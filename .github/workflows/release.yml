@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v
+        required: true
+      repository:
+        description: GitHub repository that will host the release assets
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  package-macos:
+    runs-on: macos-15
+    env:
+      RELEASE_VERSION: ${{ github.event.release.tag_name != '' && github.event.release.tag_name || inputs.version }}
+      RELEASE_REPOSITORY: ${{ inputs.repository != '' && inputs.repository || github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.4"
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv venv
+          ./venv/bin/pip install -r requirements.txt
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_VERSION#v}"
+          if [[ -z "$version" ]]; then
+            echo "Missing release version." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_DEVELOPER_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
+          APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$APPLE_DEVELOPER_CERTIFICATE_P12_BASE64" || -z "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Apple Developer ID certificate secrets are required." >&2
+            exit 1
+          fi
+
+          keychain_path="$RUNNER_TEMP/handytab-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+
+          echo "$APPLE_DEVELOPER_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" \
+            -A \
+            -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" \
+              | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' \
+              | head -n1
+          )"
+          if [[ -z "$signing_identity" ]]; then
+            echo "No Developer ID Application identity found in the imported certificate." >&2
+            exit 1
+          fi
+
+          echo "HANDYTAB_CODE_SIGN_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+
+      - name: Build app archive and cask
+        id: package
+        env:
+          HANDYTAB_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          HANDYTAB_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+          HANDYTAB_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+
+          ./scripts/brew.sh \
+            --version "${{ steps.meta.outputs.version }}" \
+            --repo "$RELEASE_REPOSITORY" \
+            --notarize | tee "$output_file"
+
+          while IFS= read -r line; do
+            case "$line" in
+              archive=*|sha256=*|cask=*)
+                echo "$line" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
+          done < "$output_file"
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.package.outputs.archive }}" \
+            "${{ steps.package.outputs.cask }}" \
+            --clobber
+
+      - name: Upload workflow artifacts
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: handytab-release-${{ steps.meta.outputs.version }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.cask }}
+
+      - name: Publish cask to tap
+        if: github.event_name == 'release' && vars.HOMEBREW_TAP_REPOSITORY != ''
+        env:
+          HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${HOMEBREW_TAP_TOKEN:-}" ]]; then
+            echo "HOMEBREW_TAP_TOKEN is not configured; skipping tap update."
+            exit 0
+          fi
+
+          tap_dir="$(mktemp -d)"
+          trap 'rm -rf "$tap_dir"' EXIT
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPOSITORY}.git" "$tap_dir"
+          mkdir -p "$tap_dir/Casks"
+          cp "${{ steps.package.outputs.cask }}" "$tap_dir/Casks/handytab.rb"
+
+          if [[ -f "$tap_dir/Casks/comux.rb" ]]; then
+            cat > "$tap_dir/README.md" <<'EOF'
+          # homebrew-tap
+
+          Homebrew casks maintained by [Hsiii](https://github.com/Hsiii).
+
+          ## Install
+
+          ```bash
+          brew install --cask Hsiii/tap/comux
+          brew install --cask Hsiii/tap/handytab
+          ```
+
+          ## Casks
+
+          - [Comux](https://github.com/Hsiii/Comux) — Codex account limits in the macOS menu bar.
+          - [HandyTab](https://github.com/Hsiii/HandyTab) — Open a favorite browser tab with a hand wave or trackpad tap.
+          EOF
+          fi
+
+          git -C "$tap_dir" config user.name "github-actions[bot]"
+          git -C "$tap_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [[ -z "$(git -C "$tap_dir" status --porcelain -- Casks/handytab.rb README.md)" ]]; then
+            echo "Tap is already up to date."
+            exit 0
+          fi
+
+          git -C "$tap_dir" add Casks/handytab.rb README.md
+          git -C "$tap_dir" commit -m "chore: update handytab to v${{ steps.meta.outputs.version }}"
+          git -C "$tap_dir" push origin HEAD
