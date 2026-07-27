@@ -169,10 +169,30 @@ cat > "$APP_BUNDLE_PATH/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+xattr -cr "$APP_BUNDLE_PATH"
+find "$APP_BUNDLE_PATH" -name '._*' -delete
+
+sign_binary() {
+    if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
+        codesign --force --sign "$CODE_SIGN_IDENTITY" "$1" >/dev/null
+    else
+        codesign --force --options runtime --timestamp --sign "$CODE_SIGN_IDENTITY" "$1" >/dev/null
+    fi
+}
+
+# Every Mach-O file must carry its own valid Developer ID signature. Signing the
+# outer bundle with --deep does not reliably replace signatures embedded in
+# third-party Python wheels.
+while IFS= read -r -d '' binary; do
+    if [[ "$binary" != "$EXECUTABLE_PATH" ]] && file "$binary" | grep -q "Mach-O"; then
+        sign_binary "$binary"
+    fi
+done < <(find "$APP_BUNDLE_PATH/Contents" -type f -print0)
+
 if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
-    codesign --force --deep --sign "$CODE_SIGN_IDENTITY" "$APP_BUNDLE_PATH" >/dev/null
+    codesign --force --sign "$CODE_SIGN_IDENTITY" "$APP_BUNDLE_PATH" >/dev/null
 else
-    codesign --force --deep --options runtime --timestamp --sign "$CODE_SIGN_IDENTITY" "$APP_BUNDLE_PATH" >/dev/null
+    codesign --force --options runtime --timestamp --sign "$CODE_SIGN_IDENTITY" "$APP_BUNDLE_PATH" >/dev/null
 fi
 
 rm -rf "$TRACKED_DIST_DIR/${APP_NAME}.app"
