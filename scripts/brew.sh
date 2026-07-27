@@ -176,6 +176,7 @@ cask "${CASK_TOKEN}" do
   name "${APP_NAME}"
   desc "Open a favorite browser tab with a hand wave or trackpad tap"
   homepage "${HOMEPAGE}"
+
   depends_on macos: :sonoma
 
   app "${APP_FILENAME}"
