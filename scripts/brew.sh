@@ -152,8 +152,6 @@ if [[ "$NOTARIZE" -eq 1 ]]; then
 
     notary_archive_path="${DIST_DIR}/${APP_NAME}-${VERSION}-notary.zip"
     rm -f "$notary_archive_path"
-    xattr -cr "$app_path"
-    find "$app_path" -name '._*' -delete
     ditto --norsrc -c -k --keepParent "$app_path" "$notary_archive_path"
 
     xcrun notarytool submit "$notary_archive_path" \
@@ -165,8 +163,6 @@ if [[ "$NOTARIZE" -eq 1 ]]; then
 fi
 
 rm -f "$archive_path"
-xattr -cr "$app_path"
-find "$app_path" -name '._*' -delete
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
 
 sha256_value="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
