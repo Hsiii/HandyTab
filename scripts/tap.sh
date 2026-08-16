@@ -133,7 +133,7 @@ if [[ -f "$OUTPUT_DIR/Casks/comux.rb" ]]; then
     cat > "$OUTPUT_DIR/README.md" <<EOF
 # homebrew-tap
 
-Homebrew casks maintained by [orangesago](https://github.com/orangesago).
+Homebrew casks maintained by [sago-cream](https://github.com/sago-cream).
 
 ## Install
 
@@ -144,7 +144,7 @@ brew install --cask ${owner}/tap/handytab
 
 ## Casks
 
-- [Comux](https://github.com/orangesago/comux) — Codex account limits in the macOS menu bar.
+- [Comux](https://github.com/sago-cream/comux) — Codex account limits in the macOS menu bar.
 - [HandyTab](${HOMEPAGE}) — Open a favorite browser tab with a hand wave or trackpad tap.
 EOF
 elif [[ ! -f "$OUTPUT_DIR/README.md" ]]; then

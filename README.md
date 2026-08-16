@@ -12,7 +12,7 @@ Open your most-used tab instantly with webcam hand wave or a quick 3-finger trac
 Install with Homebrew:
 
 ```bash
-brew install --cask orangesago/tap/handytab
+brew install --cask sago-cream/tap/handytab
 ```
 
 Or build the DMG and drag HandyTab into Applications:
