@@ -571,6 +571,10 @@ final class TrackpadTapRecognizer: @unchecked Sendable {
     }
 
     private func syncRejectedTouchIDs(with touches: UnsafeBufferPointer<MTTouch>) {
+        // Most frames have no rejected palms; avoid building temporary
+        // collections until there are IDs that actually need reconciliation.
+        guard !rejectedTouchIDs.isEmpty else { return }
+
         let activeTouchIDs = Set(touches.compactMap { touch -> Int32? in
             guard isActiveTouch(touch) else {
                 return nil
